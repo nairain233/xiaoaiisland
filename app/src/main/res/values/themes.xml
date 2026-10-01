@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 主题：Material Design 3，支持 Android 12+ 动态取色（Material You） -->
-    <style name="Theme.XiaoaiIsland" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- 窗口主题：内容由 Miuix Compose 提供，支持系统深浅色与莫奈取色 -->
+    <style name="Theme.XiaoaiIsland" parent="android:style/Theme.Material.NoActionBar">
         <!-- 日间模式：状态栏背景浅色，图标自动变深色（反色） -->
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
 </resources>

@@ -10,7 +10,7 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AppCompatActivity;
+import androidx.activity.ComponentActivity;
 
 
 import org.json.JSONArray;
@@ -34,7 +34,7 @@ import java.util.Set;
 
 import io.github.libxposed.service.XposedService;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends ComponentActivity {
 
     static final String PREFS_NAME = "island_custom";
 

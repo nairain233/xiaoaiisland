@@ -1,7 +1,10 @@
+import groovy.xml.XmlSlurper
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
 // ── 自动迭代版本号 (yyyymmddxx 格式，纯数字) ───────────────────────────────────────────────
@@ -135,8 +138,8 @@ android {
 
     defaultConfig {
         applicationId "com.xiaoai.islandnotify"
-        // 小米超级岛(OS3)最低需要MIUI14+，Android 12+
-        minSdk 31
+        // UI 模糊使用 RuntimeShader，最低 Android 13
+        minSdk 33
         targetSdk 36
         versionCode vCode
         versionName vName  // 使用纯数字版本号
@@ -219,12 +222,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
 
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = '21'
     }
 
     packaging {
@@ -250,18 +253,22 @@ dependencies {
     implementation 'io.github.libxposed:service:101.0.0'
     implementation 'com.xzakota.hyper.notification:focus-api:1.4'
 
-    // UI：Material Design 3 + AppCompat
-    implementation 'androidx.appcompat:appcompat:1.7.0'
+    // UI：Miuix / HyperOS Compose
     implementation 'androidx.activity:activity:1.13.0'
     implementation 'androidx.activity:activity-compose:1.13.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
 
     // Compose
-    implementation 'androidx.compose.foundation:foundation:1.10.5'
-    implementation 'androidx.compose.ui:ui:1.10.5'
-    implementation 'androidx.compose.ui:ui-tooling-preview:1.10.5'
-    implementation project(':hyperx-compose')
-    debugImplementation 'androidx.compose.ui:ui-tooling:1.10.5'
+    implementation 'androidx.compose.foundation:foundation:1.12.0'
+    implementation 'androidx.compose.ui:ui:1.12.0'
+    implementation 'androidx.compose.ui:ui-tooling-preview:1.12.0'
+    implementation 'top.yukonga.miuix.kmp:miuix-ui-android:0.9.4'
+    implementation 'top.yukonga.miuix.kmp:miuix-preference-android:0.9.4'
+    implementation 'top.yukonga.miuix.kmp:miuix-icons-android:0.9.4'
+    implementation 'top.yukonga.miuix.kmp:miuix-nav-android:0.9.4'
+    implementation 'top.yukonga.miuix.kmp:miuix-blur-android:0.9.4'
+    debugImplementation 'androidx.compose.ui:ui-tooling:1.12.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0'
 }
 
 // 强制禁用APK列表文件重定向任务
@@ -339,11 +346,6 @@ tasks.register("generateOpenSourceRefs") {
                 "releaseImplementation",
         ], coords)
         def refs = []
-        refs.add([
-                name: "HowieHChen/hyperx-compose",
-                license: "Apache-2.0",
-                url: "https://github.com/HowieHChen/hyperx-compose",
-        ])
         coords.values().sort { a, b ->
             "${a.group}:${a.name}" <=> "${b.group}:${b.name}"
         }.each { c ->

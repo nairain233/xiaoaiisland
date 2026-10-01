@@ -21,7 +21,7 @@
 
 ## 环境要求
 
-- **设备**：运行HyperOS3的小米/红米手机
+- **设备**：运行 HyperOS 3 的小米/红米手机
 - **框架**：[LSPosed](https://github.com/LSPosed/LSPosed)（API101）
 
 ---
@@ -82,6 +82,8 @@ tip：使用其他课表软件作为数据源时，请关闭软件内部课程�
 ### 环境要求
 
 - JDK 21
+- Gradle 9.5.0（项目 Wrapper）／Android Gradle Plugin 9.3.3
+- Kotlin 2.4.20／Compose 1.12.0／Miuix 0.9.4
 - Android SDK Platform 37
 - Android Build-Tools 37.0.0
 
@@ -171,7 +173,9 @@ xiaoailand/
 │       ├── java/com/xiaoai/islandnotify/
 │       │   ├── ModuleEntry.java            # 模块入口（LSPosed 回调分发）
 │       │   ├── MainActivity.java           # 壳 Activity（承载 Compose）
-│       │   ├── MainComposeEntry.kt         # 主界面（配置项/UI）
+│       │   ├── MainComposeEntry.kt         # Miuix 页面与配置交互
+│       │   ├── MiuixAppShell.kt            # 主题、导航与双栏宿主
+│       │   ├── MiuixComponents.kt          # 页面框架、提示与表单弹窗
 │       │   ├── hook/                       # Hook 实现（MainHook/SystemUiHook/DeskClockHook）
 │       │   ├── integration/                # 调用小爱内部接口：静音/勿扰切换与课表主动刷新
 │       │   ├── schedule/                   # 调度与超时配置
@@ -183,10 +187,6 @@ xiaoailand/
 │       │   ├── scope.list
 │       │   └── module.prop
 │       └── res/                            # drawable / values / values-night / mipmap-*
-├── hyperx-compose/                         # Compose UI 组件子模块（本地 module）
-│   └── src/main/
-│       ├── kotlin/dev/lackluster/hyperx/compose/
-│       └── res/
 ├── .github/workflows/
 │   ├── ci-debug.yml
 │   ├── release.yml

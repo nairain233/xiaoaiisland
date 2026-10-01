@@ -26,12 +26,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -41,7 +41,9 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Ensure Android 37 SDK platform
         shell: bash
@@ -60,7 +62,7 @@ jobs:
         run: ./gradlew --no-daemon clean assembleDebug
 
       - name: Upload debug APK artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-debug-apks-${{ github.run_number }}
           path: |
@@ -75,12 +77,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -90,7 +92,9 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Ensure Android 37 SDK platform
         shell: bash
@@ -243,7 +247,7 @@ jobs:
           git push origin "$TAG"
 
       - name: Upload release APK artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-apks
           path: |
@@ -252,7 +256,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ steps.autotag.outputs.tag }}
           tag_name: ${{ steps.autotag.outputs.tag }}

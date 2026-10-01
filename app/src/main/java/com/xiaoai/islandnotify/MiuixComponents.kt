@@ -3,6 +3,7 @@ package com.xiaoai.islandnotify
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,8 +16,11 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
@@ -28,18 +32,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -60,6 +71,83 @@ import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
+
+@Composable
+internal fun LspStatusCard(
+    active: Boolean,
+    frameworkDesc: String,
+    darkTheme: Boolean,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val background = when {
+        active && darkTheme -> Color(0xFF1A3825)
+        active -> Color(0xFFDFFAE4)
+        darkTheme -> Color(0xFF3A1E22)
+        else -> Color(0xFFFFE4E1)
+    }
+    val foreground = if (darkTheme) Color(0xFFF2F2F2) else Color(0xFF202124)
+    val accent = when {
+        active -> Color(0xFF36D167)
+        darkTheme -> Color(0xFFFF8A80)
+        else -> Color(0xFFD32F2F)
+    }
+    val summary = if (active) {
+        frameworkDesc.ifBlank { "LSPosed Service 已连接" }
+    } else {
+        "LSPosed Service 未连接，请检查模块启用与框架状态"
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(0.dp),
+        colors = CardDefaults.defaultColors(color = background, contentColor = foreground),
+        pressFeedbackType = PressFeedbackType.Tilt,
+        showIndication = true,
+        onClick = onRefresh,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clipToBounds()
+                .semantics { onClick(label = "刷新 LSP 状态", action = null) },
+        ) {
+            // 装饰层不参与测量，卡片高度由前景文字决定。
+            Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomEnd) {
+                Icon(
+                    painter = painterResource(
+                        if (active) R.drawable.ic_module_active else R.drawable.ic_module_inactive,
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.offset(x = 27.dp, y = 31.dp).size(110.dp),
+                    tint = accent,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 112.dp)
+                    .padding(start = 16.dp, top = 14.dp, end = 72.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = if (active) "模块已激活" else "模块未激活",
+                    color = foreground,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = summary,
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = foreground.copy(alpha = 0.8f),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
 
 internal data class EditDialogSpec(
     val title: String,

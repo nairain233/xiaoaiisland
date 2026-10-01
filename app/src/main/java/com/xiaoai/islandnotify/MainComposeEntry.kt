@@ -5,6 +5,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,7 +60,6 @@ import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.ColorSpace
 import top.yukonga.miuix.kmp.basic.NumberPicker
@@ -134,6 +134,7 @@ private fun MainComposeApp(
     activity: MainActivity,
 ) {
     val aboutState = remember { AboutComposeState() }
+    val darkTheme = isSystemInDarkTheme()
     val themeController = remember(aboutState.monetEnabled) {
         ThemeController(
             colorSchemeMode = if (aboutState.monetEnabled) {
@@ -163,6 +164,8 @@ private fun MainComposeApp(
                     modifier = pageModifier,
                     pagePadding = pagePadding,
                     state = settingsState,
+                    darkTheme = darkTheme,
+                    onRefresh = { activity.requestComposeRefresh() },
                     onOpen = onOpen,
                     onResetConfirmed = {
                         val count = activity.uiResetAllConfigToDefaults()
@@ -486,6 +489,8 @@ private fun HomeEntryPage(
     modifier: Modifier = Modifier,
     pagePadding: PaddingValues = PaddingValues(0.dp),
     state: SettingsComposeState,
+    darkTheme: Boolean,
+    onRefresh: () -> Unit,
     onOpen: (AppRoute) -> Unit,
     onResetConfirmed: () -> Unit,
     onExportConfig: () -> Unit,
@@ -499,9 +504,11 @@ private fun HomeEntryPage(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            StatusCardView(
+            LspStatusCard(
                 active = state.frameworkActive,
                 frameworkDesc = state.frameworkDesc,
+                darkTheme = darkTheme,
+                onRefresh = onRefresh,
             )
         }
         item {
@@ -1173,55 +1180,6 @@ private fun GlowColorPickerDialog(
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 onClick = { onConfirm(pickedColor.toArgb()) },
             )
-        }
-    }
-}
-
-@Composable
-private fun StatusCardView(active: Boolean, frameworkDesc: String) {
-    val bg = if (active) {
-        MiuixTheme.colorScheme.primaryContainer
-    } else {
-        MiuixTheme.colorScheme.errorContainer
-    }
-    val onColor = if (active) {
-        MiuixTheme.colorScheme.onPrimaryContainer
-    } else {
-        MiuixTheme.colorScheme.onErrorContainer
-    }
-    Card(
-        colors = CardDefaults.defaultColors(color = bg, contentColor = onColor),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            androidx.compose.foundation.Image(
-                painter = painterResource(if (active) R.drawable.ic_module_active else R.drawable.ic_module_inactive),
-                contentDescription = null,
-                modifier = Modifier.size(44.dp),
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (active) "模块已激活" else "模块未激活",
-                    color = onColor,
-                    style = MiuixTheme.textStyles.title4,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = if (active) {
-                        if (frameworkDesc.isBlank()) "LSPosed Service 已连接" else frameworkDesc
-                    } else {
-                        "LSPosed Service 未连接，请检查模块启用与框架状态"
-                    },
-                    color = onColor.copy(alpha = 0.85f),
-                    style = MiuixTheme.textStyles.body2,
-                )
-            }
         }
     }
 }

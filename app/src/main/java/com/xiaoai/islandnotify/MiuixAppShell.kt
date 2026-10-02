@@ -40,6 +40,7 @@ internal sealed interface AppRoute : NavKey {
     @Serializable data object Wakeup : AppRoute
     @Serializable data object Holiday : AppRoute
     @Serializable data object About : AppRoute
+    @Serializable data object ThirdPartyLibraries : AppRoute
 }
 
 internal fun openRoute(backStack: MutableList<NavKey>, route: AppRoute) {
@@ -113,6 +114,7 @@ internal fun MiuixAppShell(
                         entry<AppRoute.Wakeup> { content(it, onOpen, onBack) }
                         entry<AppRoute.Holiday> { content(it, onOpen, onBack) }
                         entry<AppRoute.About> { content(it, onOpen, onBack) }
+                        entry<AppRoute.ThirdPartyLibraries> { content(it, onOpen, onBack) }
                     }
                 }
             }

@@ -125,7 +125,8 @@ private data class WorkSwapDraft(
 
 private const val MAX_MINUTE_VALUE = 9999
 private const val RELEASES_URL =
-    "https://github.com/Xposed-Modules-Repo/com.xiaoai.islandnotify/releases"
+    "https://github.com/nairain233/xiaoaiisland/releases"
+private const val FORK_AUTHOR_URL = "https://github.com/nairain233"
 
 @Composable
 private fun MainComposeApp(
@@ -209,7 +210,8 @@ private fun MainComposeApp(
                 AppRoute.Mute -> MutePage(activity, settingsState, pageModifier, pagePadding)
                 AppRoute.Wakeup -> WakeupPage(activity, settingsState, pageModifier, pagePadding)
                 AppRoute.Holiday -> HolidayTab(activity, holidayState, pageModifier, pagePadding)
-                AppRoute.About -> AboutTab(activity, aboutState, pageModifier, pagePadding)
+                AppRoute.About -> AboutTab(activity, aboutState, onOpen, pageModifier, pagePadding)
+                AppRoute.ThirdPartyLibraries -> ThirdPartyLibrariesPage(activity, pageModifier, pagePadding)
                 AppRoute.Empty -> Unit
             }
         }
@@ -228,6 +230,7 @@ private val AppRoute.title: String
         AppRoute.Wakeup -> "自动叫醒"
         AppRoute.Holiday -> "假期/调休"
         AppRoute.About -> "关于"
+        AppRoute.ThirdPartyLibraries -> "第三方库"
         AppRoute.Empty -> ""
     }
 
@@ -3074,6 +3077,7 @@ private fun formatDateRange(startDate: String?, endDate: String?): String {
 private fun AboutTab(
     activity: MainActivity,
     state: AboutComposeState,
+    onOpen: (AppRoute) -> Unit,
     modifier: Modifier = Modifier,
     pagePadding: PaddingValues = PaddingValues(0.dp),
 ) {
@@ -3122,6 +3126,11 @@ private fun AboutTab(
                     endActions = { PreferenceValue("Mercury") },
                     onClick = { activity.uiOpenAuthorPage() },
                 )
+                ArrowPreference(
+                    title = "Fork 作者",
+                    endActions = { PreferenceValue("nairain") },
+                    onClick = { activity.uiOpenUrl(FORK_AUTHOR_URL) },
+                )
                 SwitchPreference(
                     title = "隐藏桌面图标",
                     checked = state.hideIcon,
@@ -3148,10 +3157,27 @@ private fun AboutTab(
                 )
             }
         }
-        item(key = "引用") {
-            SettingsSection(
-                title = "引用",
-            ) {
+        item(key = "third_party_libraries") {
+            SettingsSection {
+                ArrowPreference(
+                    title = "第三方库",
+                    summary = "查看开源库及许可证",
+                    onClick = { onOpen(AppRoute.ThirdPartyLibraries) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThirdPartyLibrariesPage(
+    activity: MainActivity,
+    modifier: Modifier = Modifier,
+    pagePadding: PaddingValues = PaddingValues(0.dp),
+) {
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        item(key = "open_source_refs") {
+            SettingsSection {
                 OpenSourceRefs.list.forEach { ref ->
                     ArrowPreference(
                         title = ref.name,

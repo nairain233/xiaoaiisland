@@ -25,11 +25,24 @@ class AppNavigationTest {
 
     @Test
     fun resizingKeepsTheDestinationAndDetailHistory() {
-        val stack = mutableListOf<NavKey>(AppRoute.Home, AppRoute.Timeout, AppRoute.About)
+        val details = listOf(AppRoute.Timeout, AppRoute.About, AppRoute.ThirdPartyLibraries)
+        val stack = mutableListOf<NavKey>(AppRoute.Home).apply { addAll(details) }
         setNavigationRoot(stack, split = true)
-        assertEquals(listOf(AppRoute.Empty, AppRoute.Timeout, AppRoute.About), stack)
+        assertEquals(listOf(AppRoute.Empty) + details, stack)
         setNavigationRoot(stack, split = false)
-        assertEquals(listOf(AppRoute.Home, AppRoute.Timeout, AppRoute.About), stack)
+        assertEquals(listOf(AppRoute.Home) + details, stack)
+    }
+
+    @Test
+    fun thirdPartyLibrariesKeepsAboutAsItsParentWithoutDuplicateEntries() {
+        for (root in listOf(AppRoute.Home, AppRoute.Empty)) {
+            val stack = mutableListOf<NavKey>(root, AppRoute.About)
+            openRoute(stack, AppRoute.ThirdPartyLibraries)
+            openRoute(stack, AppRoute.ThirdPartyLibraries)
+            assertEquals(listOf(root, AppRoute.About, AppRoute.ThirdPartyLibraries), stack)
+            openRoute(stack, AppRoute.About)
+            assertEquals(listOf(root, AppRoute.About), stack)
+        }
     }
 
     @Test
@@ -37,7 +50,7 @@ class AppNavigationTest {
         val destinations = listOf(
             AppRoute.TestNotify, AppRoute.StatusCustom, AppRoute.ExpandedCustom,
             AppRoute.Timeout, AppRoute.Reminder, AppRoute.Mute, AppRoute.Wakeup,
-            AppRoute.Holiday, AppRoute.About,
+            AppRoute.Holiday, AppRoute.About, AppRoute.ThirdPartyLibraries,
         )
         for (root in listOf(AppRoute.Home, AppRoute.Empty)) {
             val saved: List<AppRoute> = listOf(root) + destinations

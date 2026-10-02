@@ -1,4 +1,4 @@
-package com.xiaoai.islandnotify;
+package com.xiaoai.islandnotify.hook;
 
 import android.app.Application;
 import android.content.Context;
@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
+import com.xiaoai.islandnotify.CourseScheduleParser;
 import com.xiaoai.islandnotify.modernhook.XC_MethodHook;
 import com.xiaoai.islandnotify.modernhook.XposedBridge;
 
@@ -408,21 +409,29 @@ public class WakeupHook {
      * @return {tableId, timeTableId}，不存在时返回 null
      */
     private long[] queryTableById(SQLiteDatabase db, long tableId) {
-        Cursor cursor = null;
+        // 查询/读取失败维持原有回退；资源关闭异常仍交给上层处理。
+        Cursor cursor;
         try {
             cursor = db.rawQuery("SELECT id, timeTable FROM TableBean WHERE id = ?",
                     new String[]{String.valueOf(tableId)});
-            if (cursor.moveToFirst()) {
-                return new long[]{cursor.getLong(0), cursor.getLong(1)};
-            }
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": 校验 tableId=" + tableId + " 失败 -> " + t.getMessage());
-        } finally {
-            if (cursor != null) cursor.close();
+            return null;
+        }
+        try (cursor) {
+            try {
+                if (cursor.moveToFirst()) {
+                    return new long[]{cursor.getLong(0), cursor.getLong(1)};
+                }
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": 校验 tableId=" + tableId + " 失败 -> " + t.getMessage());
+            }
         }
         return null;
     }
 
+    // 保持 Android 13 兼容，避免使用较新的 CharSequence.isEmpty()。
+    @SuppressWarnings("SizeReplaceableByIsEmpty")
     private static String buildWeeks(int startWeek, int endWeek, int type) {
         StringBuilder sb = new StringBuilder();
         for (int w = startWeek; w <= endWeek; w++) {
@@ -439,9 +448,8 @@ public class WakeupHook {
     }
 
     private static boolean isInvalidSectionTime(String start, String end) {
-        if (start.isEmpty() || end.isEmpty()) return true;
-        if ("00:00".equals(start) || "00:00".equals(end)) return true;
-        return false;
+        return start.isEmpty() || end.isEmpty()
+                || "00:00".equals(start) || "00:00".equals(end);
     }
 
     private TermConfig loadTermConfig(Context ctx, long tableId) {

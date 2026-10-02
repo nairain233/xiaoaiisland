@@ -6,14 +6,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
-final class AlarmScheduler {
+public final class AlarmScheduler {
 
     private AlarmScheduler() {}
 
     private static final int SERVICE_FLAGS =
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
 
-    static Intent buildServiceIntent(String targetPackage, String serviceClassName, String action) {
+    public static Intent buildServiceIntent(String targetPackage, String serviceClassName, String action) {
         Intent intent = new Intent(action);
         intent.setClassName(targetPackage, serviceClassName);
         return intent;
@@ -21,7 +21,7 @@ final class AlarmScheduler {
 
     // 使用宿主 Context；权限由宿主声明，并在运行时检查，模块清单无法代表宿主权限。
     @android.annotation.SuppressLint("MissingPermission")
-    static boolean scheduleAlarmClock(Context ctx,
+    public static boolean scheduleAlarmClock(Context ctx,
                                       Intent serviceIntent,
                                       int requestCode,
                                       String showAction,
@@ -52,7 +52,7 @@ final class AlarmScheduler {
         }
     }
 
-    static void cancelAlarmClock(Context ctx,
+    public static void cancelAlarmClock(Context ctx,
                                  Intent serviceIntent,
                                  int requestCode,
                                  String showAction,
@@ -79,7 +79,7 @@ final class AlarmScheduler {
         }
     }
 
-    static int reqCodeForMuteAction(int alarmId, String action) {
+    public static int reqCodeForMuteAction(int alarmId, String action) {
         int aid = alarmId & 0x00FFFFFF;
         if ("com.xiaoai.islandnotify.DO_MUTE".equals(action)) return aid | 0x01000000;
         if ("com.xiaoai.islandnotify.DO_UNMUTE".equals(action)) return aid | 0x02000000;

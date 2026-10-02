@@ -33,30 +33,28 @@ public final class TimeTableHelperInvoker {
             }
 
             XposedBridge.log(TAG + ": [TimeTableInvoker] 开始全量扫描...");
-            scanAndCache(ctx, cl, cacheKey, sp);
+            scanAndCache(cl, cacheKey, sp);
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": [TimeTableInvoker] init 失败 → " + t.getMessage());
         }
     }
 
-    public static boolean triggerUpdate(Context ctx, String from, boolean fromH5) {
+    public static void triggerUpdate(Context ctx, String from, boolean fromH5) {
         Method m = sDownMethod;
         Object target = sInstance;
         if (m == null || target == null) {
             XposedBridge.log(TAG + ": [TimeTableInvoker] triggerUpdate 未就绪");
-            return false;
+            return;
         }
         try {
             m.invoke(target, ctx, from, fromH5);
             XposedBridge.log(TAG + ": [TimeTableInvoker] 已触发主动更新 from=" + from);
-            return true;
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": [TimeTableInvoker] triggerUpdate 失败 → " + t.getMessage());
-            return false;
         }
     }
 
-    private static void scanAndCache(Context ctx, ClassLoader cl, String cacheKey, SharedPreferences sp) {
+    private static void scanAndCache(ClassLoader cl, String cacheKey, SharedPreferences sp) {
         try {
             for (String name : enumerateClassNames(cl)) {
                 // 移除包名前缀限制，应对各种混淆情况

@@ -1,4 +1,4 @@
-package com.xiaoai.islandnotify;
+package com.xiaoai.islandnotify.hook;
 
 import android.content.Context;
 import android.content.Intent;
@@ -6,6 +6,9 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
+
+import com.xiaoai.islandnotify.ConfigDefaults;
+import com.xiaoai.islandnotify.PrefsAccess;
 
 import com.xzakota.hyper.notification.common.model.TimerInfo;
 import com.xzakota.hyper.notification.focus.FocusNotification;
@@ -26,6 +29,9 @@ import org.json.JSONObject;
 import java.util.Calendar;
 import java.util.Locale;
 
+// 模板占位符、提示文本和分隔符统一保留 Unicode 转义，以明确码点并与旧配置保持一致。
+// 仅抑制本类的转义写法检查，运行时字符串保持不变。
+@SuppressWarnings("UnnecessaryUnicodeEscape")
 final class IslandContentBuilder {
 
     private IslandContentBuilder() {}
@@ -159,8 +165,8 @@ final class IslandContentBuilder {
             final boolean legacyOutEffectEnabled = PrefsAccess.readConfigBool(
                     prefs, "out_effect_enabled", true);
             final boolean legacyOutEffectExists = prefs.contains("out_effect_enabled");
-            final boolean statusEffectDefault = legacyOutEffectExists ? legacyOutEffectEnabled : false;
-            final boolean expandEffectDefault = legacyOutEffectExists ? legacyOutEffectEnabled : true;
+            final boolean statusEffectDefault = legacyOutEffectExists && legacyOutEffectEnabled;
+            final boolean expandEffectDefault = !legacyOutEffectExists || legacyOutEffectEnabled;
             final boolean outEffectExpandEnabled = PrefsAccess.readConfigBool(
                     prefs, "out_effect_expand_enabled", expandEffectDefault);
             final boolean outEffectStatusEnabled = PrefsAccess.readConfigBool(
@@ -521,7 +527,7 @@ final class IslandContentBuilder {
             token = VAR_ELAPSED;
         }
 
-        String prefix = template.substring(0, Math.max(0, idx));
+        String prefix = template.substring(0, idx);
         if (!prefix.trim().isEmpty()) {
             return null;
         }

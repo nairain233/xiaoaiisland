@@ -1,4 +1,4 @@
-package com.xiaoai.islandnotify;
+package com.xiaoai.islandnotify.hook;
 
 import android.app.Application;
 import android.content.Context;
@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
+import com.xiaoai.islandnotify.CourseScheduleParser;
 import com.xiaoai.islandnotify.modernhook.XC_MethodHook;
 import com.xiaoai.islandnotify.modernhook.XposedBridge;
 
@@ -127,7 +128,7 @@ public class ShiguangHook {
                         | android.os.FileObserver.MODIFY) {
             @Override
             public void onEvent(int event, String path) {
-                if (path == null || !DATASTORE_NAME.equals(path)) return;
+                if (!DATASTORE_NAME.equals(path)) return;
                 postSync(ctx, 220L, "datastore_changed");
             }
         };
@@ -351,13 +352,18 @@ public class ShiguangHook {
     private String resolveCurrentTableId(Context ctx, SQLiteDatabase db) {
         String fromStore = readCurrentTableIdFromDataStore(ctx);
         if (fromStore != null && !fromStore.isEmpty()) return fromStore;
-        Cursor c = null;
+        // 查询/读取失败维持原有回退；资源关闭异常仍交给上层处理。
+        Cursor c;
         try {
             c = db.rawQuery("SELECT id FROM course_tables ORDER BY createdAt DESC LIMIT 1", null);
-            if (c.moveToFirst()) return safeStr(c.getString(0));
         } catch (Throwable ignored) {
-        } finally {
-            if (c != null) c.close();
+            return null;
+        }
+        try (c) {
+            try {
+                if (c.moveToFirst()) return safeStr(c.getString(0));
+            } catch (Throwable ignored) {
+            }
         }
         return null;
     }
@@ -389,42 +395,50 @@ public class ShiguangHook {
     }
 
     private TableConfig loadTableConfig(SQLiteDatabase db, String tableId) {
-        Cursor c = null;
+        Cursor c;
         try {
             c = db.rawQuery(
                     "SELECT semesterStartDate, semesterTotalWeeks, firstDayOfWeek " +
                             "FROM course_table_config WHERE courseTableId = ? LIMIT 1",
                     new String[]{tableId});
-            if (c.moveToFirst()) {
-                String startDate = normalizeStartDate(safeStr(c.getString(0)));
-                int totalWeeks = c.getInt(1);
-                int firstDay = c.getInt(2);
-                boolean sundayFirst = (firstDay == 0 || firstDay == 7);
-                return new TableConfig(startDate, totalWeeks, sundayFirst);
-            }
         } catch (Throwable ignored) {
-        } finally {
-            if (c != null) c.close();
+            return new TableConfig("", 0, false);
+        }
+        try (c) {
+            try {
+                if (c.moveToFirst()) {
+                    String startDate = normalizeStartDate(safeStr(c.getString(0)));
+                    int totalWeeks = c.getInt(1);
+                    int firstDay = c.getInt(2);
+                    boolean sundayFirst = (firstDay == 0 || firstDay == 7);
+                    return new TableConfig(startDate, totalWeeks, sundayFirst);
+                }
+            } catch (Throwable ignored) {
+            }
         }
         return new TableConfig("", 0, false);
     }
 
     private Map<Integer, String[]> loadTimeSlots(SQLiteDatabase db, String tableId) {
         Map<Integer, String[]> slots = new HashMap<>();
-        Cursor c = null;
+        Cursor c;
         try {
             c = db.rawQuery(
                     "SELECT number, startTime, endTime FROM time_slots WHERE courseTableId = ? ORDER BY number ASC",
                     new String[]{tableId});
-            while (c.moveToNext()) {
-                int number = c.getInt(0);
-                String start = safeStr(c.getString(1));
-                String end = safeStr(c.getString(2));
-                slots.put(number, new String[]{start, end});
-            }
         } catch (Throwable ignored) {
-        } finally {
-            if (c != null) c.close();
+            return slots;
+        }
+        try (c) {
+            try {
+                while (c.moveToNext()) {
+                    int number = c.getInt(0);
+                    String start = safeStr(c.getString(1));
+                    String end = safeStr(c.getString(2));
+                    slots.put(number, new String[]{start, end});
+                }
+            } catch (Throwable ignored) {
+            }
         }
         return slots;
     }
@@ -534,9 +548,8 @@ public class ShiguangHook {
     }
 
     private static boolean isInvalidSectionTime(String start, String end) {
-        if (start.isEmpty() || end.isEmpty()) return true;
-        if ("00:00".equals(start) || "00:00".equals(end)) return true;
-        return false;
+        return start.isEmpty() || end.isEmpty()
+                || "00:00".equals(start) || "00:00".equals(end);
     }
 
     private static String safeStr(String value) {

@@ -1,4 +1,4 @@
-package com.xiaoai.islandnotify;
+package com.xiaoai.islandnotify.hook;
 
 import android.app.AlarmManager;
 import android.app.Notification;
@@ -16,6 +16,14 @@ import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 
+import com.xiaoai.islandnotify.AlarmScheduler;
+import com.xiaoai.islandnotify.ConfigDefaults;
+import com.xiaoai.islandnotify.CourseScheduleParser;
+import com.xiaoai.islandnotify.HolidayManager;
+import com.xiaoai.islandnotify.MiuiSettingsInvoker;
+import com.xiaoai.islandnotify.PrefsAccess;
+import com.xiaoai.islandnotify.TimeTableHelperInvoker;
+import com.xiaoai.islandnotify.TotalWeekReceiver;
 import com.xiaoai.islandnotify.modernhook.XC_MethodHook;
 import com.xiaoai.islandnotify.modernhook.XposedBridge;
 
@@ -131,6 +139,10 @@ public class MainHook {
     private static volatile String sLastTestNotifTag = null;
     /** 已调度的课前提醒 alarmId 集合，关闭开关或重新调度时用于批量取消 */
     private final java.util.Set<Integer> mScheduledAlarmIds = new java.util.HashSet<>();
+    /** 统一保护提醒与静音闹钟 ID 的读写和持久化。 */
+    private final Object mScheduledIdsLock = new Object();
+    /** 保护跳过课程 token 的读取、修改、保存，避免并发写入丢失。 */
+    private final Object mSkippedAutomationLock = new Object();
 
     // ── 自动静音相关常量 ──
     private static final String KEY_MUTE_ENABLED         = "mute_enabled";
@@ -142,7 +154,6 @@ public class MainHook {
     private static final String KEY_UNDND_ENABLED         = "undnd_enabled";      // 下课自动关闭勿扰
     private static final String KEY_UNDND_MINS_AFTER      = "undnd_mins_after";   // 下课后多少分钟关闭勿扰
     private static final String KEY_REPOST_ENABLED         = "repost_enabled";     // 全局补发开关（通知/静音/勿扰）
-    private static final String KEY_ACTIVE_COUNTDOWN_TO_END = "active_countdown_to_end";
     /** 上次执行“跨日重调”的日期标记（year*1000 + dayOfYear） */
     private static final String KEY_LAST_DAILY_RESCHEDULE_DAY = "last_daily_reschedule_day";
     private static final String KEY_COURSE_TOTAL_WEEK = "course_total_week";
@@ -167,8 +178,6 @@ public class MainHook {
     private static final String KEY_WAKEUP_AFTERNOON_ENABLED      = "wakeup_afternoon_enabled";
     private static final String KEY_WAKEUP_AFTERNOON_FIRST_SEC    = "wakeup_afternoon_first_sec";
     private static final String KEY_WAKEUP_AFTERNOON_RULES_JSON   = "wakeup_afternoon_rules_json";
-    private static final String KEY_MIGRATION_DONE = "migration_config_v1_done";
-    private static final String KEY_NOTIF_DISMISS_TRIGGER = ConfigDefaults.KEY_NOTIF_DISMISS_TRIGGER;
     private static final int    DEFAULT_WAKEUP_MORNING_LAST_SEC       = ConfigDefaults.WAKEUP_MORNING_LAST_SEC;
     private static final int    DEFAULT_WAKEUP_AFTERNOON_FIRST_SEC    = ConfigDefaults.WAKEUP_AFTERNOON_FIRST_SEC;
     private static final String DEFAULT_WAKEUP_MORNING_RULES_JSON     = ConfigDefaults.WAKEUP_MORNING_RULES_JSON;
@@ -198,10 +207,10 @@ public class MainHook {
         try {
             SharedPreferences sp = ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE);
             JSONArray arr = new JSONArray();
-            synchronized (ids) {
+            synchronized (mScheduledIdsLock) {
                 for (Integer id : ids) arr.put(id);
+                sp.edit().putString(key, arr.toString()).apply();
             }
-            sp.edit().putString(key, arr.toString()).apply();
         } catch (Throwable ignored) {}
     }
 
@@ -223,10 +232,9 @@ public class MainHook {
         try {
             SharedPreferences sp = ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE);
             JSONArray arr = new JSONArray();
-            synchronized (tokens) {
-                for (String token : tokens) {
-                    if (token != null && !token.isEmpty()) arr.put(token);
-                }
+            // tokens 是调用方新建的局部集合；读改写过程由 mSkippedAutomationLock 保护。
+            for (String token : tokens) {
+                if (token != null && !token.isEmpty()) arr.put(token);
             }
             sp.edit().putString(KEY_SKIPPED_AUTOMATION_TOKENS, arr.toString()).apply();
         } catch (Throwable ignored) {}
@@ -258,17 +266,19 @@ public class MainHook {
 
     private void markAutomationSkippedToday(Context ctx, int automationAlarmId) {
         if (automationAlarmId < 0) return;
-        try {
-            String today = todayDateToken();
-            java.util.Set<String> tokens = loadSkippedAutomationTokens(ctx);
-            java.util.Set<String> next = new java.util.HashSet<>();
-            String todayPrefix = today + "#";
-            for (String token : tokens) {
-                if (token != null && token.startsWith(todayPrefix)) next.add(token);
-            }
-            next.add(buildSkippedAutomationToken(today, automationAlarmId));
-            saveSkippedAutomationTokens(ctx, next);
-        } catch (Throwable ignored) {}
+        synchronized (mSkippedAutomationLock) {
+            try {
+                String today = todayDateToken();
+                java.util.Set<String> tokens = loadSkippedAutomationTokens(ctx);
+                java.util.Set<String> next = new java.util.HashSet<>();
+                String todayPrefix = today + "#";
+                for (String token : tokens) {
+                    if (token != null && token.startsWith(todayPrefix)) next.add(token);
+                }
+                next.add(buildSkippedAutomationToken(today, automationAlarmId));
+                saveSkippedAutomationTokens(ctx, next);
+            } catch (Throwable ignored) {}
+        }
     }
 
     private boolean isAutomationSkippedToday(Context ctx, int automationAlarmId) {
@@ -283,10 +293,12 @@ public class MainHook {
 
     /** 跨日后清空“今日逃课跳过”token，避免历史日期残留。 */
     private void clearSkippedAutomationTokens(Context ctx) {
-        try {
-            SharedPreferences sp = ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE);
-            sp.edit().remove(KEY_SKIPPED_AUTOMATION_TOKENS).apply();
-        } catch (Throwable ignored) {}
+        synchronized (mSkippedAutomationLock) {
+            try {
+                SharedPreferences sp = ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE);
+                sp.edit().remove(KEY_SKIPPED_AUTOMATION_TOKENS).apply();
+            } catch (Throwable ignored) {}
+        }
     }
 
     /** 有连续后续课程的通知 alarmId 集合：injectIslandParams 跳过 cancel alarm 注册，
@@ -313,7 +325,7 @@ public class MainHook {
 
     // ─────────────────────────────────────────────────────────────
 
-    public void handleLoadPackage(String packageName, String processName, ClassLoader classLoader) throws Throwable {
+    public void handleLoadPackage(String packageName, String processName, ClassLoader classLoader) {
         // 只注入目标进程
         if (!TARGET_PACKAGE.equals(packageName)) {
             return;
@@ -371,7 +383,6 @@ public class MainHook {
                             String teacher = safeStr(intent.getStringExtra("teacher"));
                             CourseInfo info   = new CourseInfo(courseName, startTime, endTime, classroom, sectionRange, teacher);
                             int state         = intent.getIntExtra("state", STATE_ELAPSED);
-                            String channelId  = safeStr(intent.getStringExtra("channel_id"));
                             String tag        = intent.getStringExtra("notif_tag");
                             int id            = intent.getIntExtra("notif_id", 0);
                             int automationAlarmId = intent.getIntExtra("automation_alarm_id", id);
@@ -397,8 +408,8 @@ public class MainHook {
                                         + staleOwner + "」接管，忽略");
                                 return;
                             }
-                            SharedPreferences prefs = getConfigPrefs(context);
-                            sendIslandUpdate(info, state, context, channelId, src, nm, tag, id,
+                            SharedPreferences prefs = getConfigPrefs();
+                            sendIslandUpdate(info, state, context, src, nm, tag, id,
                                     automationAlarmId, prefs);
                         } else if (ACTION_TEST_NOTIFY.equals(action)) {
                             // 由模块 APP 触发，在目标进程内构造并发送测试通知
@@ -492,7 +503,6 @@ public class MainHook {
                                 // 使用 MainActivity 传来的精确毫秒时间戳，与真实调度逻辑完全一致
                                 long classStartMs = intent.getLongExtra("start_ms", tNow + 60_000L);
                                 long classEndMs   = intent.getLongExtra("end_ms",   tNow + 120_000L);
-                                int  tAlarmId     = tNotifId;
                                 if (tMuteEnabled || tUnmuteEnabled) {
                                     int  tMuteBefore    = intent.getIntExtra(KEY_MUTE_MINS_BEFORE,  DEFAULT_MUTE_MINS_BEFORE);
                                     int  tUnmuteAfter   = intent.getIntExtra(KEY_UNMUTE_MINS_AFTER, DEFAULT_UNMUTE_MINS_AFTER);
@@ -502,12 +512,12 @@ public class MainHook {
                                         if (tMuteTrigger <= tNow) {
                                             applyMuteState(context, true, tCourseName);
                                         } else {
-                                            scheduleMuteAlarm(context, tCourseName, tMuteTrigger, tAlarmId);
+                                            scheduleMuteAlarm(context, tCourseName, tMuteTrigger, tNotifId);
                                             XposedBridge.log(TAG + ": 测试 → 静音将在 " + (tMuteTrigger - tNow) / 1_000 + " 秒后触发");
                                         }
                                     }
                                     if (tUnmuteEnabled) {
-                                        scheduleUnmuteAlarm(context, tCourseName, tUnmuteTrigger, tAlarmId);
+                                        scheduleUnmuteAlarm(context, tCourseName, tUnmuteTrigger, tNotifId);
                                         XposedBridge.log(TAG + ": 测试 → 取消静音将在 " + (tUnmuteTrigger - tNow) / 1_000 + " 秒后触发");
                                     }
                                 }
@@ -520,12 +530,12 @@ public class MainHook {
                                         if (tDndTrigger <= tNow) {
                                             applyDndState(context, true, tCourseName);
                                         } else {
-                                            scheduleDndOnAlarm(context, tCourseName, tDndTrigger, tAlarmId);
+                                            scheduleDndOnAlarm(context, tCourseName, tDndTrigger, tNotifId);
                                             XposedBridge.log(TAG + ": 测试 → 勿扰将在 " + (tDndTrigger - tNow) / 1_000 + " 秒后触发");
                                         }
                                     }
                                     if (tUnDndEnabled) {
-                                        scheduleDndOffAlarm(context, tCourseName, tUnDndTrigger, tAlarmId);
+                                        scheduleDndOffAlarm(context, tCourseName, tUnDndTrigger, tNotifId);
                                         XposedBridge.log(TAG + ": 测试 → 关闭勿扰将在 " + (tUnDndTrigger - tNow) / 1_000 + " 秒后触发");
                                     }
                                 }
@@ -626,7 +636,6 @@ public class MainHook {
                                         // 0 间隔连续课程：trigger 触发时已到上课时间，立即刷为"上课中"
                                         XposedBridge.log(TAG + ": [连续课程] crStartMs 已过，立即刷 STATE_ELAPSED");
                                         sendIslandUpdate(newInfo, STATE_ELAPSED, context,
-                                                CR_CH,
                                                 jumpNotif, crnm,
                                                 prevTag, newId, crId, crPrefs);
                                     }
@@ -637,7 +646,6 @@ public class MainHook {
                                         // 下课时间也已过（极端情况，补发 STATE_FINISHED）
                                         XposedBridge.log(TAG + ": [连续课程] crEndMs 已过，立即刷 STATE_FINISHED");
                                         sendIslandUpdate(newInfo, STATE_FINISHED, context,
-                                                CR_CH,
                                                 jumpNotif, crnm,
                                                 prevTag, newId, crId, crPrefs);
                                     }
@@ -683,12 +691,14 @@ public class MainHook {
                 MiuiSettingsInvoker.init(appCtx, appCtx.getClassLoader());
                 bootstrapRemotePrefsUnified(appCtx);
                 // 从 SP 读取开关状态
-                SharedPreferences initPrefs = getConfigPrefs(appCtx);
+                SharedPreferences initPrefs = getConfigPrefs();
                 refreshRuntimeSwitchesFromPrefs(initPrefs);
                 registerRemotePrefsListener(appCtx);
                 // 加载持久化的闹钟 ID
-                mScheduledAlarmIds.addAll(loadScheduledIds(appCtx, KEY_SCHEDULED_ALARM_IDS));
-                mScheduledMuteIds.addAll(loadScheduledIds(appCtx, KEY_SCHEDULED_MUTE_IDS));
+                synchronized (mScheduledIdsLock) {
+                    mScheduledAlarmIds.addAll(loadScheduledIds(appCtx, KEY_SCHEDULED_ALARM_IDS));
+                    mScheduledMuteIds.addAll(loadScheduledIds(appCtx, KEY_SCHEDULED_MUTE_IDS));
+                }
                 scheduleTodayWakeupAlarms(appCtx);
                 // 启动 CourseData 监听
                 registerCourseDataListener(appCtx);
@@ -793,7 +803,7 @@ public class MainHook {
                     .putString(KEY_WAKEUP_MIRROR_BEAN, beanJson)
                     .putInt(KEY_WAKEUP_MIRROR_HASH, hash)
                     .apply();
-            SharedPreferences prefs = getConfigPrefs(context);
+            SharedPreferences prefs = getConfigPrefs();
             if (isWakeupDataSource(prefs)) {
                 mLastCourseDataHash = hash;
                 XposedBridge.log(TAG + ": 收到 WakeUp 课程镜像，触发重调度 hash=" + hash);
@@ -817,7 +827,7 @@ public class MainHook {
                     .putString(KEY_SHIGUANG_MIRROR_BEAN, beanJson)
                     .putInt(KEY_SHIGUANG_MIRROR_HASH, hash)
                     .apply();
-            SharedPreferences prefs = getConfigPrefs(context);
+            SharedPreferences prefs = getConfigPrefs();
             if (isShiguangDataSource(prefs)) {
                 mLastCourseDataHash = hash;
                 XposedBridge.log(TAG + ": 收到拾光课程镜像，触发重调度 hash=" + hash);
@@ -832,7 +842,7 @@ public class MainHook {
             XposedBridge.log(TAG + ": [daily-reschedule] trigger");
             boolean fromSourceChange = intent.getBooleanExtra("from_source_change", false);
             String newSource = intent.getStringExtra("new_source");
-            SharedPreferences prefs = getConfigPrefs(context);
+            SharedPreferences prefs = getConfigPrefs();
             refreshRuntimeSwitchesFromPrefs(prefs);
             clearSkippedAutomationTokens(context);
             markDailyRescheduleRun(context);
@@ -861,32 +871,6 @@ public class MainHook {
 
     private Intent createServiceIntent(String action) {
         return AlarmScheduler.buildServiceIntent(TARGET_PACKAGE, UPLOAD_STATE_SERVICE, action);
-    }
-
-    private int cancelOwnedIslandNotifications(Context context) {
-        int count = 0;
-        try {
-            android.app.NotificationManager nm =
-                    context.getSystemService(android.app.NotificationManager.class);
-            if (nm == null) return 0;
-            for (StatusBarNotification sbn : nm.getActiveNotifications()) {
-                if (sbn == null) continue;
-                Notification n = sbn.getNotification();
-                if (n == null || n.extras == null) continue;
-                String owner = n.extras.getString("xiaoai.islandnotify.owner", "");
-                if (!"com.xiaoai.islandnotify".equals(owner)) continue;
-                String tag = sbn.getTag();
-                int id = sbn.getId();
-                if (tag != null) nm.cancel(tag, id);
-                else nm.cancel(id);
-                mNotifCourseOwner.remove(id);
-                mNotifAutomationById.remove(id);
-                count++;
-            }
-        } catch (Throwable t) {
-            XposedBridge.log(TAG + ": cancelOwnedIslandNotifications 失败 -> " + t.getMessage());
-        }
-        return count;
     }
 
     private int cancelTargetIslandNotification(Context context, int notifId, String notifTag) {
@@ -918,7 +902,7 @@ public class MainHook {
                         action, TARGET_PACKAGE, reqCode | 0x40000000,
                         true);
             }
-            synchronized (mScheduledMuteIds) {
+            synchronized (mScheduledIdsLock) {
                 mScheduledMuteIds.remove(alarmId);
                 saveScheduledIds(ctx, KEY_SCHEDULED_MUTE_IDS, mScheduledMuteIds);
             }
@@ -1091,7 +1075,7 @@ public class MainHook {
             if (cachedBeanJson != null) {
                 beanJson = cachedBeanJson;
             } else {
-                SharedPreferences prefs = getConfigPrefs(ctx);
+                SharedPreferences prefs = getConfigPrefs();
                 String raw = readActiveCourseBeanJson(ctx, prefs);
                 if (raw == null || raw.isEmpty()) {
                     XposedBridge.log(TAG + ": 课程数据为空，跳过课前提醒调度 source="
@@ -1107,17 +1091,16 @@ public class MainHook {
             }
 
             cancelAllScheduledAlarms(ctx);
-            mScheduledAlarmIds.clear();
             java.util.Set<Integer> validAlarmIds = new java.util.HashSet<>();
 
             java.text.SimpleDateFormat holidayFmt =
                     new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
             String todayDateStr = holidayFmt.format(new java.util.Date());
-            if (HolidayManager.isHoliday(ctx, todayDateStr)) {
+            if (HolidayManager.isHoliday(todayDateStr)) {
                 XposedBridge.log(TAG + ": 今日 " + todayDateStr + " 为节假日，跳过课前提醒调度");
                 return;
             }
-            HolidayManager.HolidayEntry workSwapDay = HolidayManager.getWorkSwap(ctx, todayDateStr);
+            HolidayManager.HolidayEntry workSwapDay = HolidayManager.getWorkSwap(todayDateStr);
 
             java.util.Calendar cal = java.util.Calendar.getInstance();
             int calDay = cal.get(java.util.Calendar.DAY_OF_WEEK);
@@ -1146,7 +1129,7 @@ public class MainHook {
                 currentWeek = parsed.presentWeek;
             }
 
-            SharedPreferences prefs = getConfigPrefs(ctx);
+            SharedPreferences prefs = getConfigPrefs();
             SharedPreferences runtimePrefs = ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE);
             if (totalWeek > 0) {
                 runtimePrefs.edit().putInt(KEY_COURSE_TOTAL_WEEK, totalWeek).apply();
@@ -1175,7 +1158,7 @@ public class MainHook {
                 if (startMs < 0 || endMs < 0) continue;
                 todaySlots.add(new TodayCourseSlot(course, startMs, endMs));
             }
-            todaySlots.sort((a, b) -> Long.compare(a.startMs, b.startMs));
+            todaySlots.sort(java.util.Comparator.comparingLong(slot -> slot.startMs));
 
             mConsecutiveAnchors.clear();
             int scheduledCount = 0;
@@ -1254,7 +1237,7 @@ public class MainHook {
                                 int sid = sbn.getId();
                                 Integer autoId = mNotifAutomationById.get(sid);
                                 if (sid == alarmId || sid == derivedId
-                                        || (autoId != null && autoId.intValue() == alarmId)) {
+                                        || (autoId != null && autoId == alarmId)) {
                                     alreadyPosted = true;
                                     break;
                                 }
@@ -1321,7 +1304,7 @@ public class MainHook {
                 XposedBridge.log(TAG + ": scheduleCourseReminderAlarm 跳过：AlarmManager 不可用");
                 return;
             }
-            synchronized (mScheduledAlarmIds) {
+            synchronized (mScheduledIdsLock) {
                 mScheduledAlarmIds.add(alarmId);
                 saveScheduledIds(ctx, KEY_SCHEDULED_ALARM_IDS, mScheduledAlarmIds);
             }
@@ -1340,7 +1323,6 @@ public class MainHook {
      */
     private void cancelAllScheduledAlarms(Context ctx) {
         java.util.Set<Integer> idsToCancel = loadScheduledIds(ctx, KEY_SCHEDULED_ALARM_IDS);
-        if (idsToCancel.isEmpty()) return;
         try {
             for (int id : idsToCancel) {
                 Intent dummy = createServiceIntent(ACTION_COURSE_REMINDER);
@@ -1349,11 +1331,13 @@ public class MainHook {
                         ACTION_COURSE_REMINDER, TARGET_PACKAGE, id | 0x50000000,
                         true);
             }
-            XposedBridge.log(TAG + ": 已取消 " + idsToCancel.size() + " 个课前提醒闹钟");
+            if (!idsToCancel.isEmpty()) {
+                XposedBridge.log(TAG + ": 已取消 " + idsToCancel.size() + " 个课前提醒闹钟");
+            }
         } catch (Exception e) {
             XposedBridge.log(TAG + ": cancelAllScheduledAlarms 失败 → " + e.getMessage());
         }
-        synchronized (mScheduledAlarmIds) {
+        synchronized (mScheduledIdsLock) {
             mScheduledAlarmIds.clear();
             saveScheduledIds(ctx, KEY_SCHEDULED_ALARM_IDS, mScheduledAlarmIds);
         }
@@ -1404,7 +1388,6 @@ public class MainHook {
     /** 取消所有静音 / 取消静音闹钟。 */
     private void cancelAllMuteAlarms(Context ctx) {
         java.util.Set<Integer> idsToCancel = loadScheduledIds(ctx, KEY_SCHEDULED_MUTE_IDS);
-        if (idsToCancel.isEmpty()) return;
         try {
             for (int id : idsToCancel) {
                 for (String action : new String[]{ACTION_DO_MUTE, ACTION_DO_UNMUTE, ACTION_DO_DND_ON, ACTION_DO_DND_OFF}) {
@@ -1416,11 +1399,13 @@ public class MainHook {
                             true);
                 }
             }
-            XposedBridge.log(TAG + ": 已取消 " + idsToCancel.size() + " 个静音闹钟");
+            if (!idsToCancel.isEmpty()) {
+                XposedBridge.log(TAG + ": 已取消 " + idsToCancel.size() + " 个静音闹钟");
+            }
         } catch (Exception e) {
             XposedBridge.log(TAG + ": cancelAllMuteAlarms 失败 → " + e.getMessage());
         }
-        synchronized (mScheduledMuteIds) {
+        synchronized (mScheduledIdsLock) {
             mScheduledMuteIds.clear();
             saveScheduledIds(ctx, KEY_SCHEDULED_MUTE_IDS, mScheduledMuteIds);
         }
@@ -1442,7 +1427,7 @@ public class MainHook {
                 XposedBridge.log(TAG + ": scheduleMuteAlarm 跳过：AlarmManager 不可用");
                 return;
             }
-            synchronized (mScheduledMuteIds) {
+            synchronized (mScheduledIdsLock) {
                 mScheduledMuteIds.add(alarmId);
                 saveScheduledIds(ctx, KEY_SCHEDULED_MUTE_IDS, mScheduledMuteIds);
             }
@@ -1500,7 +1485,7 @@ public class MainHook {
                 XposedBridge.log(TAG + ": scheduleUnmuteAlarm 跳过：AlarmManager 不可用");
                 return;
             }
-            synchronized (mScheduledMuteIds) {
+            synchronized (mScheduledIdsLock) {
                 mScheduledMuteIds.add(alarmId);
                 saveScheduledIds(ctx, KEY_SCHEDULED_MUTE_IDS, mScheduledMuteIds);
             }
@@ -1526,7 +1511,7 @@ public class MainHook {
                 XposedBridge.log(TAG + ": scheduleDndOnAlarm 跳过：AlarmManager 不可用");
                 return;
             }
-            synchronized (mScheduledMuteIds) {
+            synchronized (mScheduledIdsLock) {
                 mScheduledMuteIds.add(alarmId);
                 saveScheduledIds(ctx, KEY_SCHEDULED_MUTE_IDS, mScheduledMuteIds);
             }
@@ -1552,7 +1537,7 @@ public class MainHook {
                 XposedBridge.log(TAG + ": scheduleDndOffAlarm 跳过：AlarmManager 不可用");
                 return;
             }
-            synchronized (mScheduledMuteIds) {
+            synchronized (mScheduledIdsLock) {
                 mScheduledMuteIds.add(alarmId);
                 saveScheduledIds(ctx, KEY_SCHEDULED_MUTE_IDS, mScheduledMuteIds);
             }
@@ -1645,13 +1630,13 @@ public class MainHook {
             java.text.SimpleDateFormat dateFmt =
                     new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
             String todayDateStr = dateFmt.format(new java.util.Date());
-            if (HolidayManager.isHoliday(ctx, todayDateStr)) {
+            if (HolidayManager.isHoliday(todayDateStr)) {
                 XposedBridge.log(TAG + ": 静音/勿扰：今日 " + todayDateStr + " 为节假日，跳过调度");
                 return;
             }
-            HolidayManager.HolidayEntry workSwap = HolidayManager.getWorkSwap(ctx, todayDateStr);
+            HolidayManager.HolidayEntry workSwap = HolidayManager.getWorkSwap(todayDateStr);
 
-            SharedPreferences prefs = getConfigPrefs(ctx);
+            SharedPreferences prefs = getConfigPrefs();
             String beanJson = readActiveCourseBeanJson(ctx, prefs);
             if (beanJson == null || beanJson.isEmpty()) {
                 return;
@@ -1767,14 +1752,14 @@ public class MainHook {
             java.text.SimpleDateFormat dateFmt =
                     new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
             String todayDateStr = dateFmt.format(new java.util.Date());
-            if (HolidayManager.isHoliday(ctx, todayDateStr)) {
+            if (HolidayManager.isHoliday(todayDateStr)) {
                 XposedBridge.log(TAG + ": 叫醒：今日 " + todayDateStr + " 为节假日，清除叫醒闹钟");
                 sendClearClockAlarms(ctx);
                 return;
             }
-            HolidayManager.HolidayEntry workSwap = HolidayManager.getWorkSwap(ctx, todayDateStr);
+            HolidayManager.HolidayEntry workSwap = HolidayManager.getWorkSwap(todayDateStr);
 
-            SharedPreferences sourcePrefs = getConfigPrefs(ctx);
+            SharedPreferences sourcePrefs = getConfigPrefs();
             String beanJson = readActiveCourseBeanJson(ctx, sourcePrefs);
             if (beanJson == null || beanJson.isEmpty()) {
                 sendClearClockAlarms(ctx);
@@ -1788,7 +1773,7 @@ public class MainHook {
             // 2. 延时 1s 发送：确保 deskclock 进程完成初始化并进入 Looper 循环
             getRescheduleHandler().postDelayed(() -> {
                 try {
-                    SharedPreferences prefs = getConfigPrefs(ctx);
+                    SharedPreferences prefs = getConfigPrefs();
                     Intent schedIntent = new Intent(ACTION_SCHEDULE_CLOCK_ALARMS);
                     schedIntent.setPackage(DESKCLOCK_PKG);
                     // 关键标志位：允许触发已停止的应用，且提高接收优先级
@@ -1921,7 +1906,7 @@ public class MainHook {
             @Override
             public void onEvent(int event, String path) {
                 if (path == null || !path.equals("CourseData.xml")) return;
-                if (!isXiaoaiDataSource(getConfigPrefs(ctx))) return;
+                if (!isXiaoaiDataSource(getConfigPrefs())) return;
                 // 防抖：移除上次未执行的任务，延迟 1500ms 执行
                 getRescheduleHandler().removeCallbacksAndMessages(mRescheduleToken);
                 getRescheduleHandler().postDelayed(() -> {
@@ -2002,7 +1987,7 @@ public class MainHook {
         }
 
         @Override
-        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+        protected void beforeHookedMethod(MethodHookParam param) {
             Notification notification = (Notification) param.args[notifArgIndex];
             if (notification == null) return;
 
@@ -2067,7 +2052,7 @@ public class MainHook {
             CourseInfo info, int notifId, String notifTag, int automationAlarmId) {
         try {
             if (notif.extras == null) notif.extras = new Bundle();
-            SharedPreferences prefs = getConfigPrefs(ctx);
+            SharedPreferences prefs = getConfigPrefs();
 
             long startMs = computeClassStartMs(info.startTime);
             long endMs   = computeClassStartMs(info.endTime);
@@ -2191,8 +2176,8 @@ public class MainHook {
                     if (sbn.getId() == id) { src = sbn.getNotification() != null ? sbn : null; break; }
                 }
                 if (src == null) return;
-                SharedPreferences prefs = getConfigPrefs(fc);
-                sendIslandUpdate(fi, state, fc, channelId, src.getNotification(), nm, tag, id,
+                SharedPreferences prefs = getConfigPrefs();
+                sendIslandUpdate(fi, state, fc, src.getNotification(), nm, tag, id,
                         automationAlarmId, prefs);
             }, delayMs);
             XposedBridge.log(TAG + ": Handler 已设定 state=" + state + " in " + (delayMs / 1000) + "s");
@@ -2254,7 +2239,7 @@ public class MainHook {
      *                          闹钟持久化传入；展示 id 被连续课程换发成 newId 后仍保持一致。
      */
     private void sendIslandUpdate(CourseInfo info, int state,
-            Context ctx, String channelId, Notification src,
+            Context ctx, Notification src,
             android.app.NotificationManager nm, String tag, int id,
             int automationAlarmId, android.content.SharedPreferences prefs) {
         try {
@@ -2359,7 +2344,7 @@ public class MainHook {
             SharedPreferences hostHoliday = ctx.getSharedPreferences(HolidayManager.PREFS_HOLIDAY, Context.MODE_PRIVATE);
 
             HolidayManager.setRemotePrefs(remoteHoliday);
-            migrateRuntimeStorageOnce(hostConfig, hostRuntime, null);
+            migrateRuntimeStorageOnce(hostConfig, hostRuntime);
             purgeHostConfigKeys(hostConfig);
             PrefsAccess.deleteLocalIfEmpty(ctx, PREFS_NAME);
             clearPrefs(hostHoliday);
@@ -2391,38 +2376,15 @@ public class MainHook {
     }
 
 
-    private void runInitialMigrationFiltered(SharedPreferences remote, SharedPreferences local,
-                                             String label, boolean configOnly) {
-        if (remote == null || local == null) return;
-        java.util.Map<String, ?> remoteAll = remote.getAll();
-        java.util.Map<String, ?> localAll = local.getAll();
-        boolean remoteEmpty = remoteAll == null || remoteAll.isEmpty();
-        boolean localEmpty = localAll == null || localAll.isEmpty();
-
-        if (remoteEmpty && !localEmpty) {
-            return;
-        }
-        if (!remoteEmpty && localEmpty) {
-            copyAllPrefsFiltered(local, remoteAll, configOnly);
-            XposedBridge.log(TAG + ": 首次迁移(" + label + ")：remote prefs -> 宿主本地");
-        }
-    }
-
-    private void copyAllPrefsFiltered(SharedPreferences target, java.util.Map<String, ?> allValues, boolean configOnly) {
-        if (!isWritablePrefs(target)) return;
-        PrefsAccess.copyAllFiltered(target, allValues, configOnly);
-    }
-
     private boolean isConfigKey(String key) {
         return ConfigDefaults.isConfigKey(key);
     }
 
-    private void migrateRuntimeStorageOnce(SharedPreferences hostConfig, SharedPreferences hostRuntime,
-                                           SharedPreferences remoteConfig) {
+    private void migrateRuntimeStorageOnce(SharedPreferences hostConfig, SharedPreferences hostRuntime) {
         if (hostConfig == null || hostRuntime == null) return;
         try {
             if (hostRuntime.getBoolean(KEY_RUNTIME_MIGRATION_DONE, false)) {
-                migrateAddedRuntimeKeys(hostConfig, hostRuntime, remoteConfig);
+                migrateAddedRuntimeKeys(hostConfig, hostRuntime);
                 return;
             }
             SharedPreferences.Editor runtimeEd = hostRuntime.edit();
@@ -2439,24 +2401,6 @@ public class MainHook {
             if (moved) runtimeEd.apply();
             hostConfigEd.apply();
 
-            if (remoteConfig != null && isWritablePrefs(remoteConfig)) {
-                try {
-                    SharedPreferences.Editor remoteEd = remoteConfig.edit();
-                    remoteEd.remove(KEY_COURSE_TOTAL_WEEK);
-                    remoteEd.remove(KEY_LAST_DAILY_RESCHEDULE_DAY);
-                    remoteEd.remove(KEY_SCHEDULED_ALARM_IDS);
-                    remoteEd.remove(KEY_SCHEDULED_MUTE_IDS);
-                    java.util.Map<String, ?> remoteAll = remoteConfig.getAll();
-                    if (remoteAll != null) {
-                        for (String key : remoteAll.keySet()) {
-                            if (key != null && key.startsWith(SETTINGS_CACHE_PREFIX)) remoteEd.remove(key);
-                            if (key != null && key.startsWith(TIMETABLE_CACHE_PREFIX)) remoteEd.remove(key);
-                        }
-                    }
-                    remoteEd.apply();
-                } catch (Throwable ignored) {}
-            }
-
             hostRuntime.edit().putBoolean(KEY_RUNTIME_MIGRATION_DONE, true).apply();
             if (moved) XposedBridge.log(TAG + ": 运行态键已迁移到 island_runtime");
         } catch (Throwable t) {
@@ -2464,8 +2408,7 @@ public class MainHook {
         }
     }
 
-    private void migrateAddedRuntimeKeys(SharedPreferences hostConfig, SharedPreferences hostRuntime,
-                                         SharedPreferences remoteConfig) {
+    private void migrateAddedRuntimeKeys(SharedPreferences hostConfig, SharedPreferences hostRuntime) {
         try {
             SharedPreferences.Editor runtimeEd = hostRuntime.edit();
             SharedPreferences.Editor hostConfigEd = hostConfig.edit();
@@ -2473,16 +2416,6 @@ public class MainHook {
             if (moved) {
                 runtimeEd.apply();
                 hostConfigEd.apply();
-            }
-            if (remoteConfig != null && isWritablePrefs(remoteConfig)) {
-                SharedPreferences.Editor remoteEd = remoteConfig.edit();
-                java.util.Map<String, ?> remoteAll = remoteConfig.getAll();
-                if (remoteAll != null) {
-                    for (String key : remoteAll.keySet()) {
-                        if (key != null && key.startsWith(TIMETABLE_CACHE_PREFIX)) remoteEd.remove(key);
-                    }
-                }
-                remoteEd.apply();
             }
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": migrateAddedRuntimeKeys failed -> " + t.getMessage());
@@ -2503,7 +2436,7 @@ public class MainHook {
                                   String key) {
         if (!src.contains(key)) return false;
         String value = src.getString(key, "");
-        if (!runtime.contains(key) && value != null) runtimeEd.putString(key, value);
+        if (!runtime.contains(key)) runtimeEd.putString(key, value);
         srcEd.remove(key);
         return true;
     }
@@ -2525,41 +2458,6 @@ public class MainHook {
             moved = true;
         }
         return moved;
-    }
-
-    private void migrateLegacyConfigOnce(SharedPreferences sp) {
-        if (sp == null) return;
-        try {
-            java.util.Map<String, ?> all = sp.getAll();
-            if (all == null || all.isEmpty()) return;
-            if (sp.getBoolean(KEY_MIGRATION_DONE, false)) {
-                SharedPreferences.Editor ed = sp.edit();
-                if (ConfigMigration.purgeLegacyConfigKeys(ed)) ed.apply();
-                return;
-            }
-            SharedPreferences.Editor ed = sp.edit();
-            boolean changed = ConfigMigration.migrateBaseConfig(sp, ed, KEY_NOTIF_DISMISS_TRIGGER);
-
-            if (changed) {
-                XposedBridge.log(TAG + ": 一次性迁移完成（旧配置 -> 三阶段）");
-            }
-            ed.putBoolean(KEY_MIGRATION_DONE, true);
-            ed.apply();
-        } catch (Throwable t) {
-            XposedBridge.log(TAG + ": migrateLegacyConfigOnce failed -> " + t.getMessage());
-        }
-    }
-
-    // 仅探测 edit() 是否可用，不修改键，也不提交空事务。
-    @android.annotation.SuppressLint("CommitPrefEdits")
-    private boolean isWritablePrefs(SharedPreferences prefs) {
-        if (prefs == null) return false;
-        try {
-            SharedPreferences.Editor ed = prefs.edit();
-            return ed != null;
-        } catch (Throwable t) {
-            return false;
-        }
     }
 
     private void registerRemotePrefsListener(Context ctx) {
@@ -2628,7 +2526,7 @@ public class MainHook {
      * 使用 XSharedPreferences 绕过 Android 9+ 的沙箱文件权限限制。
      * createPackageContext+MODE_PRIVATE 在 Android 9+ 会被 SELinux 拦截，无法使用。
      */
-    private SharedPreferences loadConfigPrefsRemoteFirst(Context ctx) {
+    private SharedPreferences loadConfigPrefsRemoteFirst() {
         try {
             com.xiaoai.islandnotify.modernhook.XSharedPreferences remote =
                     new com.xiaoai.islandnotify.modernhook.XSharedPreferences(PREFS_NAME);
@@ -2640,13 +2538,13 @@ public class MainHook {
         }
     }
 
-    private SharedPreferences getConfigPrefs(Context ctx) {
-        return loadConfigPrefsRemoteFirst(ctx);
+    private SharedPreferences getConfigPrefs() {
+        return loadConfigPrefsRemoteFirst();
     }
 
     private String readCourseSource(SharedPreferences prefs) {
         String source = readConfigString(prefs, KEY_COURSE_DATA_SOURCE, SOURCE_XIAOAI);
-        if (source == null || source.isEmpty()) return SOURCE_XIAOAI;
+        if (source.isEmpty()) return SOURCE_XIAOAI;
         return source;
     }
 
@@ -2782,10 +2680,6 @@ public class MainHook {
         final String classroom;
         final String sectionRange;
         final String teacher;
-
-        CourseInfo(String courseName, String startTime, String endTime, String classroom) {
-            this(courseName, startTime, endTime, classroom, "", "");
-        }
 
         CourseInfo(String courseName, String startTime, String endTime, String classroom, String sectionRange, String teacher) {
             this.courseName = courseName;

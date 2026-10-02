@@ -410,7 +410,7 @@ private class HolidayComposeState {
     val workswapEntries = mutableStateListOf<HolidayManager.HolidayEntry>()
 
     fun loadFrom(activity: MainActivity) {
-        val all = HolidayManager.loadEntries(activity, year)
+        val all = HolidayManager.loadEntries(year)
         holidayEntries.clear()
         workswapEntries.clear()
         all.forEach {
@@ -2198,7 +2198,7 @@ private fun HolidayTab(
                                     ).show()
                                     return@launch
                                 }
-                                HolidayManager.mergeAndSave(activity, state.year, entries)
+                                HolidayManager.mergeAndSave(state.year, entries)
                                 activity.uiSyncHolidayToHook(state.year)
                                 entries.forEach { e ->
                                     val endDate =
@@ -2288,8 +2288,8 @@ private fun HolidayTab(
         onDismissRequest = { showClearYearDialog = false },
         onConfirm = {
             showClearYearDialog = false
-            val old = HolidayManager.loadEntries(activity, state.year)
-            HolidayManager.saveEntries(activity, state.year, ArrayList())
+            val old = HolidayManager.loadEntries(state.year)
+            HolidayManager.saveEntries(state.year, ArrayList())
             activity.uiSyncHolidayToHook(state.year)
             old.forEach { e ->
                 val end = if (e.endDate.isNullOrEmpty()) e.date else e.endDate
@@ -2313,14 +2313,14 @@ private fun HolidayTab(
             confirmText = "删除",
             onDismissRequest = { pendingDeleteHoliday = null },
             onConfirm = {
-                val all = HolidayManager.loadEntries(activity, state.year).toMutableList()
+                val all = HolidayManager.loadEntries(state.year).toMutableList()
                 all.removeIf { e ->
                     e.date == target.date &&
                             (e.endDate ?: "") == (target.endDate ?: "") &&
                             e.name == target.name &&
                             e.type == target.type
                 }
-                HolidayManager.saveEntries(activity, state.year, all)
+                HolidayManager.saveEntries(state.year, all)
                 activity.uiSyncHolidayToHook(state.year)
                 val targetEnd = if (target.endDate.isNullOrBlank()) target.date else target.endDate
                 activity.uiRescheduleIfCoversToday(target.date, targetEnd)
@@ -2343,11 +2343,11 @@ private fun HolidayTab(
             confirmText = "删除",
             onDismissRequest = { pendingDeleteWorkswap = null },
             onConfirm = {
-                val all = HolidayManager.loadEntries(activity, state.year).toMutableList()
+                val all = HolidayManager.loadEntries(state.year).toMutableList()
                 all.removeIf { e ->
                     e.date == target.date && e.name == target.name && e.type == target.type
                 }
-                HolidayManager.saveEntries(activity, state.year, all)
+                HolidayManager.saveEntries(state.year, all)
                 activity.uiSyncHolidayToHook(state.year)
                 activity.uiRescheduleIfCoversToday(target.date, null)
                 state.loadFrom(activity)
@@ -2369,7 +2369,7 @@ private fun HolidayTab(
             onSave = { save ->
                 val isEdit = holidayEditEntry != null
                 val name = save.name.trim().ifBlank { "节假日" }
-                val all = HolidayManager.loadEntries(activity, state.year).toMutableList()
+                val all = HolidayManager.loadEntries(state.year).toMutableList()
                 holidayEditEntry?.let { old ->
                     all.removeIf { e ->
                         e.date == old.date &&
@@ -2386,7 +2386,7 @@ private fun HolidayTab(
                     true,
                 )
                 all.sortBy { it.date }
-                HolidayManager.saveEntries(activity, state.year, all)
+                HolidayManager.saveEntries(state.year, all)
                 activity.uiSyncHolidayToHook(state.year)
                 val endDate = if (save.endDate.isBlank()) save.date else save.endDate
                 activity.uiRescheduleIfCoversToday(save.date, endDate)
@@ -2416,7 +2416,7 @@ private fun HolidayTab(
             onSave = { save ->
                 val isEdit = workswapEditEntry != null
                 val name = save.name.trim().ifBlank { "调休工作日" }
-                val all = HolidayManager.loadEntries(activity, state.year).toMutableList()
+                val all = HolidayManager.loadEntries(state.year).toMutableList()
                 workswapEditEntry?.let { old ->
                     all.removeIf { e -> e.date == old.date && e.name == old.name && e.type == old.type }
                 }
@@ -2431,7 +2431,7 @@ private fun HolidayTab(
                 entry.followWeekday = save.followWeekday.coerceIn(1, 7)
                 all += entry
                 all.sortBy { it.date }
-                HolidayManager.saveEntries(activity, state.year, all)
+                HolidayManager.saveEntries(state.year, all)
                 activity.uiSyncHolidayToHook(state.year)
                 activity.uiRescheduleIfCoversToday(save.date, null)
                 workswapEditEntry?.let { old -> activity.uiRescheduleIfCoversToday(old.date, null) }

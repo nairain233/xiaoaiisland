@@ -2,6 +2,12 @@ package com.xiaoai.islandnotify;
 
 import androidx.annotation.NonNull;
 
+import com.xiaoai.islandnotify.hook.MainHook;
+import com.xiaoai.islandnotify.hook.DeskClockHook;
+import com.xiaoai.islandnotify.hook.SystemUiHook;
+import com.xiaoai.islandnotify.hook.WakeupHook;
+import com.xiaoai.islandnotify.hook.ShiguangHook;
+
 import com.xiaoai.islandnotify.modernhook.XposedBridge;
 
 import io.github.libxposed.api.XposedModule;

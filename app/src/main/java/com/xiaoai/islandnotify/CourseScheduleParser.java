@@ -7,18 +7,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-final class CourseScheduleParser {
+public final class CourseScheduleParser {
 
     private CourseScheduleParser() {}
 
-    static final class ParsedSchedule {
+    public static final class ParsedSchedule {
         /**
          * 学期真实周序号，不做上下夹取：学期未开始时 ≤ 0，学期结束后 &gt; totalWeek。
          * 课程匹配可直接使用，越界周在 {@link CourseSlot#isInWeek(int)} 中天然不匹配任何课程。
          */
-        final int presentWeek;
-        final int totalWeek;
-        final List<CourseSlot> courses;
+        public final int presentWeek;
+        public final int totalWeek;
+        public final List<CourseSlot> courses;
 
         ParsedSchedule(int presentWeek, int totalWeek, List<CourseSlot> courses) {
             this.presentWeek = presentWeek;
@@ -26,25 +26,25 @@ final class CourseScheduleParser {
             this.courses = courses == null ? Collections.emptyList() : courses;
         }
 
-        boolean isTermNotStarted() {
+        public boolean isTermNotStarted() {
             return presentWeek < 1;
         }
 
-        boolean isTermEnded() {
+        public boolean isTermEnded() {
             return totalWeek > 0 && presentWeek > totalWeek;
         }
     }
 
-    static final class CourseSlot {
-        final int day;
-        final String courseName;
-        final String startTime;
-        final String endTime;
-        final String classroom;
-        final String sectionRange;
-        final String teacher;
+    public static final class CourseSlot {
+        public final int day;
+        public final String courseName;
+        public final String startTime;
+        public final String endTime;
+        public final String classroom;
+        public final String sectionRange;
+        public final String teacher;
         /** 起始节次，无法解析出节次时为 -1 */
-        final int firstSection;
+        public final int firstSection;
         private final WeekMatcher weekMatcher;
 
         CourseSlot(int day, String courseName, String startTime, String endTime,
@@ -61,12 +61,12 @@ final class CourseScheduleParser {
             this.weekMatcher = weekMatcher == null ? WeekMatcher.empty() : weekMatcher;
         }
 
-        boolean isInWeek(int week) {
+        public boolean isInWeek(int week) {
             return weekMatcher.contains(week);
         }
     }
 
-    static ParsedSchedule parse(String beanJson) throws Exception {
+    public static ParsedSchedule parse(String beanJson) throws Exception {
         if (beanJson == null || beanJson.isEmpty()) {
             throw new IllegalArgumentException("weekCourseBean is empty");
         }
@@ -97,7 +97,7 @@ final class CourseScheduleParser {
         return new ParsedSchedule(presentWeek, totalWeek, courses);
     }
 
-    static int stableHash(String beanJson) {
+    public static int stableHash(String beanJson) {
         if (beanJson == null || beanJson.isEmpty()) return 0;
         try {
             JSONObject root = new JSONObject(beanJson);
@@ -111,7 +111,7 @@ final class CourseScheduleParser {
                 presentWeek = computePresentWeek(startDate, presentWeek, sundayFirst);
             }
 
-            String stable = String.valueOf(data.optJSONArray("courses"))
+            String stable = data.optJSONArray("courses")
                     + sectionTimesStableRaw(setting)
                     + setting.optString("totalWeek")
                     + setting.optString("weekStart")
@@ -134,7 +134,7 @@ final class CourseScheduleParser {
         JSONArray direct = setting.optJSONArray("sectionTimes");
         if (direct != null) return direct;
         String raw = setting.optString("sectionTimes", "[]");
-        if (raw == null || raw.isEmpty()) raw = "[]";
+        if (raw.isEmpty()) raw = "[]";
         return new JSONArray(raw);
     }
 
@@ -210,8 +210,7 @@ final class CourseScheduleParser {
     private static boolean isValidTimeRange(String start, String end) {
         if (!isLikelyTime(start) || !isLikelyTime(end)) return false;
         // WakeUp 常见占位值：00:00；这类值不能作为课程时间。
-        if ("00:00".equals(start) || "00:00".equals(end)) return false;
-        return true;
+        return !"00:00".equals(start) && !"00:00".equals(end);
     }
 
     private static boolean isLikelyTime(String value) {
@@ -221,7 +220,7 @@ final class CourseScheduleParser {
         if (h1 < '0' || h1 > '2' || h2 < '0' || h2 > '9') return false;
         if (m1 < '0' || m1 > '5' || m2 < '0' || m2 > '9') return false;
         int hour = (h1 - '0') * 10 + (h2 - '0');
-        return hour >= 0 && hour <= 23;
+        return hour <= 23;
     }
 
     private static int[] parseSectionBounds(String sectionsSpec) {

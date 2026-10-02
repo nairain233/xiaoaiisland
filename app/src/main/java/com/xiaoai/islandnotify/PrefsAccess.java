@@ -9,7 +9,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
-final class PrefsAccess {
+public final class PrefsAccess {
 
     private PrefsAccess() {}
 
@@ -49,56 +49,41 @@ final class PrefsAccess {
         return resolve(prefs).edit();
     }
 
-    static int readConfigInt(SharedPreferences prefs, String key, int fallback) {
+    public static int readConfigInt(SharedPreferences prefs, String key, int fallback) {
         SharedPreferences target = resolve(prefs);
         return target.getInt(key, ConfigDefaults.intDefault(key, fallback));
     }
 
-    static boolean readConfigBool(SharedPreferences prefs, String key, boolean fallback) {
+    public static boolean readConfigBool(SharedPreferences prefs, String key, boolean fallback) {
         SharedPreferences target = resolve(prefs);
         return target.getBoolean(key, ConfigDefaults.boolDefault(key, fallback));
     }
 
-    static String readConfigString(SharedPreferences prefs, String key, String fallback) {
+    public static String readConfigString(SharedPreferences prefs, String key, String fallback) {
         SharedPreferences target = resolve(prefs);
         String value = target.getString(key, ConfigDefaults.stringDefault(key, fallback));
         return value == null ? "" : value;
     }
 
-    static String readStagedString(SharedPreferences prefs, String key, String suffix, String fallback) {
+    public static String readStagedString(SharedPreferences prefs, String key, String suffix, String fallback) {
         SharedPreferences target = resolve(prefs);
         String value = target.getString(key + suffix, "");
-        if (value == null || value.isEmpty()) return fallback;
+        if (value.isEmpty()) return fallback;
         return value;
     }
 
-    static String readStagedTemplate(SharedPreferences prefs, String key, String suffix, String fallback) {
+    public static String readStagedTemplate(SharedPreferences prefs, String key, String suffix, String fallback) {
         return readStagedString(prefs, key, suffix,
                 ConfigDefaults.stagedTemplateDefault(key, suffix, fallback));
     }
 
-    static void copyAll(SharedPreferences target, Map<String, ?> allValues) {
-        copyAllFiltered(target, allValues, false);
-    }
-
-    static void copyAllFiltered(SharedPreferences target, Map<String, ?> allValues, boolean configOnly) {
+    public static void copyAllFiltered(SharedPreferences target, Map<String, ?> allValues, boolean configOnly) {
         if (allValues == null) return;
         SharedPreferences.Editor ed = edit(target);
         for (Map.Entry<String, ?> e : allValues.entrySet()) {
             String key = e.getKey();
             if (configOnly && !ConfigDefaults.isConfigKey(key)) continue;
             putTyped(ed, key, e.getValue());
-        }
-        ed.apply();
-    }
-
-    static void copySingleKey(SharedPreferences target, SharedPreferences source, String key) {
-        if (source == null || key == null) return;
-        SharedPreferences.Editor ed = edit(target);
-        if (!source.contains(key)) {
-            ed.remove(key);
-        } else {
-            putTyped(ed, key, source.getAll().get(key));
         }
         ed.apply();
     }
@@ -124,7 +109,7 @@ final class PrefsAccess {
         }
     }
 
-    static void clearIfNotEmpty(SharedPreferences prefs) {
+    public static void clearIfNotEmpty(SharedPreferences prefs) {
         SharedPreferences target = resolve(prefs);
         Map<String, ?> all = target.getAll();
         if (all == null || all.isEmpty()) return;
@@ -137,7 +122,7 @@ final class PrefsAccess {
         deleteLocalIfEmpty(ctx, prefsName);
     }
 
-    static void deleteLocalIfEmpty(Context ctx, String prefsName) {
+    public static void deleteLocalIfEmpty(Context ctx, String prefsName) {
         SharedPreferences local = ctx.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
         Map<String, ?> all = local.getAll();
         if (all != null && !all.isEmpty()) return;

@@ -1,6 +1,5 @@
 package com.xiaoai.islandnotify;
 
-import android.content.Context;
 import android.content.SharedPreferences;
 
 import org.json.JSONArray;
@@ -9,12 +8,12 @@ import org.json.JSONObject;
 import java.time.LocalDate;
 import java.time.DateTimeException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 public class HolidayManager {
 
     public static final String PREFS_HOLIDAY = "island_holiday";
-    public static final String EXTRA_LIST_PREFIX = "holiday_list_";
     private static volatile SharedPreferences sRemotePrefs;
 
     public static final int TYPE_HOLIDAY = 0;
@@ -82,7 +81,7 @@ public class HolidayManager {
         public String followDesc() {
             if (followWeek < 1 || followWeekday < 1) return "未配置";
             String[] wds = {"", "周一", "周二", "周三", "周四", "周五", "周六", "周日"};
-            String wd = (followWeekday >= 1 && followWeekday <= 7) ? wds[followWeekday] : "周?";
+            String wd = followWeekday <= 7 ? wds[followWeekday] : "周?";
             return "第" + followWeek + "周 " + wd;
         }
 
@@ -96,7 +95,7 @@ public class HolidayManager {
         }
     }
 
-    public static List<HolidayEntry> loadEntries(Context ctx, int year) {
+    public static List<HolidayEntry> loadEntries(int year) {
         SharedPreferences sp = resolvePrefs();
         String raw = sp.getString("list_" + year, null);
         List<HolidayEntry> list = new ArrayList<>();
@@ -117,15 +116,15 @@ public class HolidayManager {
         return arr.toString();
     }
 
-    public static void saveEntries(Context ctx, int year, List<HolidayEntry> entries) {
+    public static void saveEntries(int year, List<HolidayEntry> entries) {
         resolvePrefs()
                 .edit()
                 .putString("list_" + year, entriesToJson(entries))
                 .apply();
     }
 
-    public static void mergeAndSave(Context ctx, int year, List<HolidayEntry> apiEntries) {
-        List<HolidayEntry> existing = loadEntries(ctx, year);
+    public static void mergeAndSave(int year, List<HolidayEntry> apiEntries) {
+        List<HolidayEntry> existing = loadEntries(year);
         List<HolidayEntry> merged = new ArrayList<>();
         for (HolidayEntry e : existing) {
             if (e.isCustom) merged.add(e);
@@ -140,23 +139,14 @@ public class HolidayManager {
             }
             if (!conflict) merged.add(ae);
         }
-        merged.sort((a, b) -> a.date.compareTo(b.date));
-        saveEntries(ctx, year, merged);
+        merged.sort(Comparator.comparing(entry -> entry.date));
+        saveEntries(year, merged);
     }
 
-    public static void clearAll(Context ctx) {
-        SharedPreferences sp = resolvePrefs();
-        SharedPreferences.Editor editor = sp.edit();
-        for (String key : sp.getAll().keySet()) {
-            if (key.startsWith("list_")) editor.remove(key);
-        }
-        editor.apply();
-    }
-
-    public static boolean isHoliday(Context ctx, String date) {
+    public static boolean isHoliday(String date) {
         try {
             int year = Integer.parseInt(date.substring(0, 4));
-            for (HolidayEntry e : loadEntries(ctx, year)) {
+            for (HolidayEntry e : loadEntries(year)) {
                 if (e.type == TYPE_HOLIDAY && e.isMatch(date)) return true;
             }
         } catch (Exception ignored) {
@@ -164,10 +154,10 @@ public class HolidayManager {
         return false;
     }
 
-    public static HolidayEntry getWorkSwap(Context ctx, String date) {
+    public static HolidayEntry getWorkSwap(String date) {
         try {
             int year = Integer.parseInt(date.substring(0, 4));
-            for (HolidayEntry e : loadEntries(ctx, year)) {
+            for (HolidayEntry e : loadEntries(year)) {
                 if (e.type == TYPE_WORKSWAP && e.isMatch(date)) return e;
             }
         } catch (Exception ignored) {
@@ -210,7 +200,7 @@ public class HolidayManager {
 
     private static List<HolidayEntry> mergeConsecutiveEntries(List<HolidayEntry> list) {
         if (list.isEmpty()) return list;
-        list.sort((a, b) -> a.date.compareTo(b.date));
+        list.sort(Comparator.comparing(entry -> entry.date));
         List<HolidayEntry> merged = new ArrayList<>();
         HolidayEntry current = null;
         for (HolidayEntry e : list) {

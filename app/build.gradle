@@ -1,4 +1,5 @@
 import groovy.xml.XmlSlurper
+import org.gradle.api.artifacts.ExternalModuleDependency
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -110,21 +111,18 @@ def readExistingVersion(buildType) {
     return [code: code, name: name, displayName: name + (buildType == 'debug' ? '_debug' : '')]
 }
 
-def vCode, vName, displayVName
+def vCode, vName
 if (isReleaseBuild && releaseVersion) {
     vCode = releaseVersion.code
     vName = releaseVersion.name
-    displayVName = releaseVersion.displayName
 } else if (isDebugBuild && debugVersion) {
     vCode = debugVersion.code
     vName = debugVersion.name
-    displayVName = debugVersion.displayName
 } else {
     // 配置阶段（非构建 task）：只读不写，不触发计数自增
     def existing = readExistingVersion('release')
     vCode = existing.code
     vName = existing.name
-    displayVName = existing.displayName
 }
 
 android {
@@ -309,8 +307,6 @@ def resolvePomMetadata = { String g, String n, String v ->
         cfg.transitive = false
         File pomFile = cfg.singleFile
         def xml = new XmlSlurper(false, false).parse(pomFile)
-        def title = xml.name?.text()?.trim()
-        if (!title) title = "${g}:${n}"
         def licenses = xml.licenses?.license?.collect { it.name?.text()?.trim() }?.findAll { it } ?: []
         def license = licenses ? licenses.unique().join(" / ") : "Unknown"
         def url = xml.url?.text()?.trim()
@@ -325,10 +321,9 @@ def resolvePomMetadata = { String g, String n, String v ->
 
 def collectExternalDeps = { Project p, List<String> confNames, Map<String, Map<String, String>> out ->
     confNames.each { confName ->
-        def conf = p.configurations.findByName(confName)
-        if (conf == null) return
+        def conf = p.configurations.named(confName).get()
         conf.dependencies.each { dep ->
-            if (dep instanceof org.gradle.api.artifacts.ExternalModuleDependency
+            if (dep instanceof ExternalModuleDependency
                     && dep.group && dep.name && dep.version) {
                 def key = "${dep.group}:${dep.name}:${dep.version}"
                 out.putIfAbsent(key, [group: dep.group, name: dep.name, version: dep.version])

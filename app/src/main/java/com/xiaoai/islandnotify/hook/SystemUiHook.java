@@ -1,4 +1,4 @@
-package com.xiaoai.islandnotify;
+package com.xiaoai.islandnotify.hook;
 
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -24,10 +24,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import org.json.JSONObject;
 
 import static com.xiaoai.islandnotify.modernhook.XposedHelpers.findAndHookMethod;
 
@@ -51,31 +49,20 @@ public class SystemUiHook {
             "com.android.systemui.devicenotification.listener.DeviceNotificationListenerImpl";
     private static final String DEVICE_MODEL_CLASS =
             "com.android.systemui.devicenotification.bean.DeviceNotificationModel";
-    private static final String DYNAMIC_ISLAND_WINDOW_VIEW_CONTROLLER_CLASS =
-            "miui.systemui.dynamicisland.window.DynamicIslandWindowViewController";
     private static final String DYNAMIC_ISLAND_ANIMATION_CONTROLLER_CLASS =
             "miui.systemui.dynamicisland.anim.DynamicIslandAnimationController";
     private static final String DYNAMIC_GLOW_EFFECT_VIEW_CLASS =
             "miui.systemui.dynamicisland.view.DynamicGlowEffectView";
-    private static final String DYNAMIC_ISLAND_BASE_CONTENT_VIEW_CLASS =
-            "miui.systemui.dynamicisland.window.content.DynamicIslandBaseContentView";
-    private static final String TEMPLATE_FACTORY_V3_CLASS =
-            "miui.systemui.notification.focus.templateV3.TemplateFactoryV3";
     private static final String DYNAMIC_FEATURE_CONFIG_CLASS =
             "miui.systemui.dynamicisland.DynamicFeatureConfig";
     private static final String MODULE_TEXT_VIEW_HOLDER_CLASS =
             "miui.systemui.notification.focus.moduleV3.ModuleTextViewHolder";
-    private static final String MODULE_TINY_TEXT_VIEW_HOLDER_CLASS =
-            "miui.systemui.notification.focus.moduleV3.ModuleTinyTextViewHolder";
     private static final String MODULE_DECO_PORT_TEXT_BUTTON_VIEW_HOLDER_CLASS =
             "miui.systemui.notification.focus.moduleV3.ModuleDecoPortTextButtonViewHolder";
-    private static final String MODULE_DECO_PORT_TEXT_VIEW_HOLDER_CLASS =
-            "miui.systemui.notification.focus.moduleV3.ModuleDecoPortTextViewHolder";
     private static final String MODULE_TEXT_BUTTON_VIEW_HOLDER_CLASS =
             "miui.systemui.notification.focus.moduleV3.ModuleTextButtonViewHolder";
     private static final String MODULE_TINY_TEXT_BUTTON_VIEW_HOLDER_CLASS =
             "miui.systemui.notification.focus.moduleV3.ModuleTinyTextButtonViewHolder";
-    private static final String LIGHT_BG_SHADER_CLASS = "com.mi.widget.shader.LightBgShader";
     private static final String LIGHT_BG_SHADER_FIELD = "U_LIGHT_COLORS";
     private static final String PREFS_GROUP_CONFIG = "island_custom";
     private static final String KEY_STATUS_CUSTOM_GLOW_COLOR_ENABLED = "out_effect_status_custom_color_enabled";
@@ -86,10 +73,6 @@ public class SystemUiHook {
     private static final String KEY_EXPAND_GLOW_ENABLED = "out_effect_expand_enabled";
     private static final String BASE_ISLAND_MODULE_VIEW_HOLDER_CLASS =
             "miui.systemui.dynamicisland.module.BaseIslandModuleViewHolder";
-    private static final String ISLAND_TEXT_VIEW_HOLDER_CLASS =
-            "miui.systemui.dynamicisland.module.IslandTextViewHolder";
-    private static final String ISLAND_RIGHT_TEXT_VIEW_HOLDER_CLASS =
-            "miui.systemui.dynamicisland.module.IslandRightTextViewHolder";
     private static final String ISLAND_SAME_WIDTH_DIGIT_VIEW_HOLDER_CLASS =
             "miui.systemui.dynamicisland.module.IslandSameWidthDigitViewHolder";
 
@@ -99,10 +82,10 @@ public class SystemUiHook {
     private static final Set<String> sHookedIslandContentClasses = ConcurrentHashMap.newKeySet();
     private static final Set<String> sHookedShaderFeatureClasses = ConcurrentHashMap.newKeySet();
     private static final Set<String> sHookedAnimationControllerClasses = ConcurrentHashMap.newKeySet();
-    private static final Set<String> sHookedLightBgShaderClasses = ConcurrentHashMap.newKeySet();
     private static final Set<String> sHookedGlowEffectViewClasses = ConcurrentHashMap.newKeySet();
+    private static final Set<String> sLoggedOptionalHookFailures = ConcurrentHashMap.newKeySet();
     private static final Map<Class<?>, float[]> sDefaultLightShaderColors =
-            java.util.Collections.synchronizedMap(new WeakHashMap<Class<?>, float[]>());
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private static volatile boolean sGlowColorHookDisabled = false;
     private static volatile boolean sCachedStatusCustomGlowEnabled = false;
     private static volatile int sCachedStatusCustomGlowArgb = 0xFFFFFFFF;
@@ -118,17 +101,16 @@ public class SystemUiHook {
     private static volatile long sRecentOwnedGlowAt = 0L;
     private static final long RECENT_OWNED_GLOW_TTL_MS = 2500L;
     private static final Map<TextView, Boolean> sAdaptiveWatchers =
-            java.util.Collections.synchronizedMap(new WeakHashMap<TextView, Boolean>());
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Object, String> sFocusContentKeyMap =
-            java.util.Collections.synchronizedMap(new WeakHashMap<Object, String>());
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     // bind(Template, StatusBarNotification) 时按 sbn 记录 holder 归属，
     // 供 notifyDataChanged/setViewWidth 等无 sbn 参数的 hook 查询。
     private static final Map<Object, Boolean> sHolderOwned =
-            java.util.Collections.synchronizedMap(new WeakHashMap<Object, Boolean>());
-    private static final ConcurrentMap<String, CachedTexts> sFullTextByKey = new ConcurrentHashMap<>();
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private static final Set<String> sOwnedNotifyKeys = ConcurrentHashMap.newKeySet();
     private static final Map<ClassLoader, Boolean> sInstalledHookLoaders =
-            java.util.Collections.synchronizedMap(new WeakHashMap<ClassLoader, Boolean>());
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private static volatile boolean sBaseDexCtorHooked = false;
     private static volatile boolean sLoadClassHooked = false;
     private static final ExecutorService sHookInstallerExecutor =
@@ -176,6 +158,7 @@ public class SystemUiHook {
         try {
             sHookInstallerExecutor.execute(() -> installHooksForClassLoader(classLoader));
         } catch (Throwable t) {
+            swallowOptionalHookFailure(t);
             installHooksForClassLoader(classLoader);
         }
     }
@@ -186,7 +169,7 @@ public class SystemUiHook {
             for (Method m : cls.getDeclaredMethods()) {
                 if (!"setUpDynamicIslandDataBundle".equals(m.getName())) continue;
                 Class<?>[] pts = m.getParameterTypes();
-                if (pts == null || pts.length != 1) continue;
+                if (pts.length != 1) continue;
                 if (!StatusBarNotification.class.equals(pts[0])) continue;
                 m.setAccessible(true);
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
@@ -194,12 +177,11 @@ public class SystemUiHook {
                     protected void afterHookedMethod(MethodHookParam param) {
                         try {
                             Object result = param.getResult();
-                            if (!(result instanceof Bundle)) return;
-                            Bundle dataBundle = (Bundle) result;
+                            if (!(result instanceof Bundle dataBundle)) return;
                             StatusBarNotification sbn = null;
                             if (param.args != null && param.args.length > 0
-                                    && param.args[0] instanceof StatusBarNotification) {
-                                sbn = (StatusBarNotification) param.args[0];
+                                    && param.args[0] instanceof StatusBarNotification notification) {
+                                sbn = notification;
                             }
                             Bundle notifExtras = null;
                             if (sbn != null) {
@@ -224,7 +206,8 @@ public class SystemUiHook {
                             if (!TextUtils.isEmpty(owner)) {
                                 dataBundle.putString(EXTRA_OWNER_KEY, owner);
                             }
-                        } catch (Throwable ignore) {
+                        } catch (Throwable failure) {
+                            swallowOptionalHookFailure(failure);
                         }
                     }
                 });
@@ -238,8 +221,9 @@ public class SystemUiHook {
     private Bundle extractExtrasFromDynamicIslandData(Object dataObj) {
         try {
             Object extrasObj = invokeNoArg(dataObj, "getExtras");
-            if (extrasObj instanceof Bundle) return (Bundle) extrasObj;
-        } catch (Throwable ignore) {
+            if (extrasObj instanceof Bundle extras) return extras;
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
         return null;
     }
@@ -253,7 +237,7 @@ public class SystemUiHook {
     private String extractKeyFromDynamicIslandData(Object dataObj) {
         if (dataObj == null) return "";
         Object keyObj = invokeNoArg(dataObj, "getKey");
-        return keyObj instanceof String ? (String) keyObj : "";
+        return keyObj instanceof String value ? value : "";
     }
 
     private boolean isOwnedDynamicIslandData(Object dataObj) {
@@ -269,7 +253,6 @@ public class SystemUiHook {
             sOwnedNotifyKeys.add(key);
         } else {
             sOwnedNotifyKeys.remove(key);
-            sFullTextByKey.remove(key);
         }
         return owned;
     }
@@ -316,7 +299,7 @@ public class SystemUiHook {
             for (Method m : cls.getDeclaredMethods()) {
                 if (!"onStateChange".equals(m.getName())) continue;
                 Class<?>[] pts = m.getParameterTypes();
-                if (pts == null || pts.length < 1) continue;
+                if (pts.length < 1) continue;
                 m.setAccessible(true);
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
@@ -334,12 +317,13 @@ public class SystemUiHook {
                             Object bigView = invokeNoArg(stateObj, "getBigIslandView");
                             if (bigView == null) return;
                             if (isBig) {
-                                normalizeBigGlowView(bigView);
+                                // Keep the host's adaptive glow size to avoid halo overflow.
                                 invokeStartGlowEffect(bigView);
                             } else if (isDeleted) {
                                 invokeStopGlowEffect(bigView);
                             }
-                        } catch (Throwable ignore) {
+                        } catch (Throwable failure) {
+                            swallowOptionalHookFailure(failure);
                         }
                     }
                 });
@@ -361,7 +345,8 @@ public class SystemUiHook {
             try {
                 Object value = invokeNoArg(stateObj, n);
                 if (value != null) return value;
-            } catch (Throwable ignore) {
+            } catch (Throwable failure) {
+                swallowOptionalHookFailure(failure);
             }
         }
         return null;
@@ -485,7 +470,8 @@ public class SystemUiHook {
                 Object out = m.invoke(container);
                 if (out != null) return out;
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
         return null;
     }
@@ -496,7 +482,8 @@ public class SystemUiHook {
             Method m = lightBgShader.getClass().getDeclaredMethod("getMTextureShader");
             m.setAccessible(true);
             return m.invoke(lightBgShader);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
         try {
             for (Method m : lightBgShader.getClass().getDeclaredMethods()) {
@@ -506,7 +493,8 @@ public class SystemUiHook {
                 Object out = m.invoke(lightBgShader);
                 if (out != null) return out;
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
         return null;
     }
@@ -518,7 +506,8 @@ public class SystemUiHook {
             m.setAccessible(true);
             m.invoke(runtimeShader, "uLightColors", colors);
             return;
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
         try {
             for (Method m : runtimeShader.getClass().getMethods()) {
@@ -529,9 +518,10 @@ public class SystemUiHook {
                 if (!pts[1].isArray()) continue;
                 m.setAccessible(true);
                 m.invoke(runtimeShader, "uLightColors", colors);
-                return;
+                break;
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -546,12 +536,6 @@ public class SystemUiHook {
         return Arrays.copyOf(def, def.length);
     }
 
-    private void normalizeBigGlowView(Object bigView) {
-        if (bigView == null) return;
-        // Keep default adaptive glow size from SystemUI. Forcing suppressAdaptiveGlowViewSize
-        // can make the halo exceed island edges on some builds.
-    }
-
     private void invokeStartGlowEffect(Object target) {
         if (target == null) return;
         String[] names = new String[] {
@@ -564,7 +548,8 @@ public class SystemUiHook {
                 m.setAccessible(true);
                 m.invoke(target);
                 return;
-            } catch (Throwable ignore) {
+            } catch (Throwable failure) {
+                swallowOptionalHookFailure(failure);
             }
         }
         try {
@@ -573,9 +558,10 @@ public class SystemUiHook {
                 if (!m.getName().contains("startGlowEffect")) continue;
                 m.setAccessible(true);
                 m.invoke(target);
-                return;
+                break;
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -591,14 +577,16 @@ public class SystemUiHook {
                 m.setAccessible(true);
                 m.invoke(target, Boolean.TRUE);
                 return;
-            } catch (Throwable ignore) {
+            } catch (Throwable failure) {
+                swallowOptionalHookFailure(failure);
             }
             try {
                 Method m = target.getClass().getMethod(n);
                 m.setAccessible(true);
                 m.invoke(target);
                 return;
-            } catch (Throwable ignore) {
+            } catch (Throwable failure) {
+                swallowOptionalHookFailure(failure);
             }
         }
     }
@@ -612,12 +600,10 @@ public class SystemUiHook {
                                 "loadClass", String.class, boolean.class, new XC_MethodHook() {
                                     @Override
                                     protected void afterHookedMethod(MethodHookParam param) {
-                                        if (!(param.thisObject instanceof ClassLoader)) return;
+                                        if (!(param.thisObject instanceof ClassLoader hit)) return;
                                         if (param.args == null || param.args.length == 0) return;
                                         Object nameObj = param.args[0];
-                                        if (!(nameObj instanceof String)) return;
-                                        String name = (String) nameObj;
-                                        ClassLoader hit = (ClassLoader) param.thisObject;
+                                        if (!(nameObj instanceof String name)) return;
                                         if (!isFocusModuleClassName(name)) return;
                                         scheduleInstallHooksForClassLoader(hit);
                                     }
@@ -639,8 +625,7 @@ public class SystemUiHook {
                             XposedBridge.hookMethod(c, new XC_MethodHook() {
                                 @Override
                                 protected void afterHookedMethod(MethodHookParam param) {
-                                    if (!(param.thisObject instanceof ClassLoader)) return;
-                                    ClassLoader cl = (ClassLoader) param.thisObject;
+                                    if (!(param.thisObject instanceof ClassLoader cl)) return;
                                     if (!isLikelyPluginClassLoader(cl)) return;
                                     scheduleInstallHooksForClassLoader(cl);
                                 }
@@ -672,82 +657,32 @@ public class SystemUiHook {
                 || lower.contains("systemui_component");
     }
 
-    private static void swallowOptionalHookFailure(Throwable t) {
-        // Optional hook points may not exist across ROM/plugin versions.
-        // Keep silent to avoid noisy logs when fallback paths still work.
-    }
-
-    private void hookLightBgShaderColor(ClassLoader classLoader) {
-        try {
-            refreshGlowPrefsCache(true);
-            Class<?> shaderCls = Class.forName(LIGHT_BG_SHADER_CLASS, false, classLoader);
-            String clsName = shaderCls.getName();
-            if (!sHookedLightBgShaderClasses.add(clsName)) return;
-            Constructor<?>[] constructors = shaderCls.getDeclaredConstructors();
-            for (Constructor<?> c : constructors) {
-                c.setAccessible(true);
-                XposedBridge.hookMethod(c, new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        if (sGlowColorHookDisabled) return;
-                        try {
-                            Object shaderObj = param.thisObject;
-                            if (shaderObj == null) return;
-                            applyCustomGlowColor(shaderObj.getClass());
-                        } catch (Throwable t) {
-                            sGlowColorHookDisabled = true;
-                            swallowOptionalHookFailure(t);
-                        }
-                    }
-                });
-            }
-            float[] current = getLightShaderArray(shaderCls);
-            cacheDefaultLightShaderArray(shaderCls, current);
-        } catch (Throwable t) {
-            swallowOptionalHookFailure(t);
+    private static void swallowOptionalHookFailure(Throwable failure) {
+        // 不同 ROM 可缺少可选类或方法；仅对此类探测失败静默。
+        Throwable cause = failure;
+        while (cause instanceof IllegalStateException && cause.getCause() != null) {
+            cause = cause.getCause();
         }
-    }
-
-    private int resolveGlowModeFromState(Object stateObj) {
-        if (stateObj == null) return GLOW_MODE_AUTO;
-        Object state = invokeNoArg(stateObj, "getState");
-        String text = String.valueOf(state);
-        if (text.contains("Expand")) return GLOW_MODE_EXPAND;
-        if (text.contains("BigIsland")) return GLOW_MODE_STATUS;
-        return GLOW_MODE_AUTO;
-    }
-
-    private void applyCustomGlowColorForClassLoader(ClassLoader classLoader, int glowMode) {
-        if (sGlowColorHookDisabled) return;
-        if (classLoader == null) return;
-        try {
-            refreshGlowPrefsCache(false);
-            Class<?> shaderCls = Class.forName(LIGHT_BG_SHADER_CLASS, false, classLoader);
-            applyCustomGlowColor(shaderCls, glowMode);
-        } catch (Throwable t) {
-            sGlowColorHookDisabled = true;
-            swallowOptionalHookFailure(t);
-        }
-    }
-
-    private void applyCustomGlowColor(Class<?> shaderCls) {
-        applyCustomGlowColor(shaderCls, GLOW_MODE_AUTO);
-    }
-
-    private void applyCustomGlowColor(Class<?> shaderCls, int glowMode) {
-        if (shaderCls == null) return;
-        float[] current = getLightShaderArray(shaderCls);
-        if (current == null || current.length == 0) return;
-        cacheDefaultLightShaderArray(shaderCls, current);
-
-        GlowColorConfig cfg = resolveGlowColorConfig(glowMode);
-        if (!cfg.effectEnabled || !cfg.customEnabled) {
-            restoreDefaultLightShaderArray(shaderCls);
+        if (cause instanceof ClassNotFoundException || cause instanceof NoSuchMethodException
+                || cause instanceof NoSuchFieldException) {
             return;
         }
-        float[] target = rebuildLightShaderArray(current, cfg.argb);
-        if (target == null || target.length == 0) return;
-        setLightShaderArray(shaderCls, target);
+        Throwable rootCause = cause;
+        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+            rootCause = rootCause.getCause();
+        }
+        StackTraceElement[] frames = new Throwable().getStackTrace();
+        String callSite = frames.length > 1 ? frames[1].toString() : SystemUiHook.class.getName();
+        String signature = callSite + "|" + rootCause.getClass().getName() + "|" + rootCause.getMessage();
+        // 同一调用位置、根因类型及消息在当前进程只记录首次堆栈，避免高频宿主回调刷屏。
+        if (!sLoggedOptionalHookFailures.add(signature)) return;
+        try {
+            XposedBridge.log(TAG + ": optional hook failed");
+            XposedBridge.log(failure);
+        } catch (RuntimeException loggingFailure) {
+            // 日志接口故障也不能中断宿主回调，退回系统日志保留原异常。
+            android.util.Log.e(TAG, "Unable to write optional hook failure to Xposed log: " + loggingFailure, failure);
+        }
     }
 
     private GlowColorConfig resolveGlowColorConfig(int glowMode) {
@@ -799,7 +734,8 @@ public class SystemUiHook {
     private SharedPreferences readModuleConfigPrefs() {
         try {
             return XposedBridge.getRemotePreferences(PREFS_GROUP_CONFIG);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
             return null;
         }
     }
@@ -808,12 +744,6 @@ public class SystemUiHook {
         if (shaderCls == null || currentArray == null || currentArray.length == 0) return;
         if (sDefaultLightShaderColors.containsKey(shaderCls)) return;
         sDefaultLightShaderColors.put(shaderCls, Arrays.copyOf(currentArray, currentArray.length));
-    }
-
-    private void restoreDefaultLightShaderArray(Class<?> shaderCls) {
-        float[] def = sDefaultLightShaderColors.get(shaderCls);
-        if (def == null || def.length == 0) return;
-        setLightShaderArray(shaderCls, Arrays.copyOf(def, def.length));
     }
 
     private float[] rebuildLightShaderArray(float[] base, int argb) {
@@ -920,9 +850,7 @@ public class SystemUiHook {
     }
 
     private float clamp01(float v) {
-        if (v < 0f) return 0f;
-        if (v > 1f) return 1f;
-        return v;
+        return Math.max(0f, Math.min(1f, v));
     }
 
     private float[] getLightShaderArray(Class<?> shaderCls) {
@@ -931,21 +859,11 @@ public class SystemUiHook {
             if (f == null) return null;
             f.setAccessible(true);
             Object obj = f.get(null);
-            if (!(obj instanceof float[])) return null;
-            return (float[]) obj;
-        } catch (Throwable ignore) {
+            if (!(obj instanceof float[] colors)) return null;
+            return colors;
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
             return null;
-        }
-    }
-
-    private void setLightShaderArray(Class<?> shaderCls, float[] value) {
-        if (shaderCls == null || value == null || value.length == 0) return;
-        try {
-            Field f = findField(shaderCls, LIGHT_BG_SHADER_FIELD);
-            if (f == null) return;
-            f.setAccessible(true);
-            f.set(null, value);
-        } catch (Throwable ignore) {
         }
     }
 
@@ -963,7 +881,7 @@ public class SystemUiHook {
             for (Method m : cls.getDeclaredMethods()) {
                 if (!"bind".equals(m.getName())) continue;
                 Class<?>[] pts = m.getParameterTypes();
-                if (pts == null || pts.length != 2) continue;
+                if (pts.length != 2) continue;
                 if (!"miui.systemui.notification.focus.model.Template".equals(pts[0].getName())) continue;
                 if (!StatusBarNotification.class.equals(pts[1])) continue;
                 m.setAccessible(true);
@@ -988,7 +906,7 @@ public class SystemUiHook {
             for (Method m : cls.getDeclaredMethods()) {
                 if (!"bind".equals(m.getName())) continue;
                 Class<?>[] pts = m.getParameterTypes();
-                if (pts == null || pts.length != 2) continue;
+                if (pts.length != 2) continue;
                 if (!DYNAMIC_ISLAND_DATA_CLASS.equals(pts[1].getName())) continue;
                 m.setAccessible(true);
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
@@ -1020,28 +938,25 @@ public class SystemUiHook {
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (!isHolderOwned(param.thisObject)) return;
+                        if (isHolderUnowned(param.thisObject)) return;
                         Object self = param.thisObject;
-                        if (self == null) return;
                         Object digitObj = getFieldValue(self, "sameWidthDigit");
                         Object titleObj = getFieldValue(self, "title");
                         Object contentObj = getFieldValue(self, "content");
-                        if (!(contentObj instanceof TextView)) return;
+                        if (!(contentObj instanceof TextView content)) return;
                         enforceSameWidthDigitTypeface(self);
                         TextView source = null;
-                        if (digitObj instanceof TextView) {
-                            TextView digit = (TextView) digitObj;
+                        if (digitObj instanceof TextView digit) {
                             if (digit.getVisibility() == View.VISIBLE) source = digit;
                         }
-                        if (source == null && titleObj instanceof TextView) {
-                            TextView title = (TextView) titleObj;
+                        if (source == null && titleObj instanceof TextView title) {
                             if (title.getVisibility() == View.VISIBLE) source = title;
                         }
-                        if (source == null && titleObj instanceof TextView) {
-                            source = (TextView) titleObj;
+                        if (source == null && titleObj instanceof TextView title) {
+                            source = title;
                         }
                         if (source == null) return;
-                        harmonizeSuffixStyle(source, (TextView) contentObj);
+                        harmonizeSuffixStyle(source, content);
                     }
                 });
                 return;
@@ -1053,15 +968,12 @@ public class SystemUiHook {
 
     private void enforceSameWidthDigitTypeface(Object holder) {
         if (holder == null) return;
-        TextView digit = null;
-        TextView title = null;
-        TextView content = null;
         Object d = getFieldValue(holder, "sameWidthDigit");
         Object t = getFieldValue(holder, "title");
         Object c = getFieldValue(holder, "content");
-        if (d instanceof TextView) digit = (TextView) d;
-        if (t instanceof TextView) title = (TextView) t;
-        if (c instanceof TextView) content = (TextView) c;
+        TextView digit = d instanceof TextView view ? view : null;
+        TextView title = t instanceof TextView view ? view : null;
+        TextView content = c instanceof TextView view ? view : null;
         android.graphics.Typeface tf = android.graphics.Typeface.create("mipro-demibold", android.graphics.Typeface.NORMAL);
         sReentry.set(Boolean.TRUE);
         try {
@@ -1080,7 +992,8 @@ public class SystemUiHook {
                 content.setTextScaleX(1f);
                 content.setLetterSpacing(0f);
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         } finally {
             sReentry.set(Boolean.FALSE);
         }
@@ -1096,33 +1009,32 @@ public class SystemUiHook {
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (!isHolderOwned(param.thisObject)) return;
+                        if (isHolderUnowned(param.thisObject)) return;
                         Object self = param.thisObject;
-                        if (self == null) return;
                         if (!ISLAND_SAME_WIDTH_DIGIT_VIEW_HOLDER_CLASS.equals(self.getClass().getName())) return;
                         if (param.args == null || param.args.length < 4) return;
                         Object contentObj = param.args[2];
                         Object textObj = param.args[3];
-                        if (!(contentObj instanceof TextView)) return;
-                        String text = textObj instanceof String ? (String) textObj : null;
+                        if (!(contentObj instanceof TextView content)) return;
+                        String text = textObj instanceof String value ? value : null;
                         if (text == null) return;
-                        TextView content = (TextView) contentObj;
 
                         TextView src = null;
                         Object digitObj = getFieldValue(self, "sameWidthDigit");
-                        if (digitObj instanceof TextView && ((TextView) digitObj).getVisibility() == View.VISIBLE) {
-                            src = (TextView) digitObj;
+                        if (digitObj instanceof TextView digit && digit.getVisibility() == View.VISIBLE) {
+                            src = digit;
                         }
                         if (src == null) {
                             Object titleObj = getFieldValue(self, "title");
-                            if (titleObj instanceof TextView) src = (TextView) titleObj;
+                            if (titleObj instanceof TextView title) src = title;
                         }
                         int color = src != null ? src.getCurrentTextColor() : content.getCurrentTextColor();
                         sReentry.set(Boolean.TRUE);
                         try {
                             invokeUpdateTextWithColor(content, text, color);
                             content.setTextColor(color);
-                        } catch (Throwable ignore) {
+                        } catch (Throwable failure) {
+                            swallowOptionalHookFailure(failure);
                         } finally {
                             sReentry.set(Boolean.FALSE);
                         }
@@ -1140,8 +1052,9 @@ public class SystemUiHook {
         try {
             Method m = target.getClass().getMethod("updateTextWithNewAppearance", CharSequence.class, Integer.class);
             m.setAccessible(true);
-            m.invoke(target, text, Integer.valueOf(color));
-        } catch (Throwable ignore) {
+            m.invoke(target, text, color);
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
             target.setText(text, TextView.BufferType.SPANNABLE);
         }
     }
@@ -1171,10 +1084,8 @@ public class SystemUiHook {
             content.setLineHeight(title.getLineHeight());
             ViewGroup.LayoutParams lp = content.getLayoutParams();
             ViewGroup.LayoutParams titleLp = title.getLayoutParams();
-            if (lp instanceof ViewGroup.MarginLayoutParams) {
-                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
-                if (titleLp instanceof ViewGroup.MarginLayoutParams) {
-                    ViewGroup.MarginLayoutParams tmlp = (ViewGroup.MarginLayoutParams) titleLp;
+            if (lp instanceof ViewGroup.MarginLayoutParams mlp) {
+                if (titleLp instanceof ViewGroup.MarginLayoutParams tmlp) {
                     mlp.leftMargin = tmlp.leftMargin;
                     mlp.topMargin = tmlp.topMargin;
                     mlp.rightMargin = tmlp.rightMargin;
@@ -1189,7 +1100,8 @@ public class SystemUiHook {
             }
             content.setPadding(title.getPaddingLeft(), title.getPaddingTop(), title.getPaddingRight(), title.getPaddingBottom());
             content.requestLayout();
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         } finally {
             sReentry.set(Boolean.FALSE);
         }
@@ -1212,7 +1124,8 @@ public class SystemUiHook {
             if (styleId != 0) {
                 target.setTextAppearance(styleId);
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -1231,15 +1144,15 @@ public class SystemUiHook {
             XposedBridge.hookMethod(m, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    if (!isHolderOwned(param.thisObject)) return;
+                    if (isHolderUnowned(param.thisObject)) return;
                     Object self = param.thisObject;
-                    if (self == null) return;
                     applyMarqueeForFieldTextView(self, "focusSmallTitle");
                     applyMarqueeForFieldTextView(self, "focusTitle");
                     applyMarqueeForFieldTextView(self, "focusTitleView");
                 }
             });
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -1250,130 +1163,24 @@ public class SystemUiHook {
             if (f == null) return;
             f.setAccessible(true);
             Object obj = f.get(holder);
-            if (!(obj instanceof TextView)) return;
-            TextView tv = (TextView) obj;
+            if (!(obj instanceof TextView tv)) return;
             if (TextUtils.isEmpty(tv.getText())) return;
             ensureAdaptiveWatcher(tv);
             applyAdaptiveMarquee(tv);
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private void hookCalculateMaxWidthWithSmall(ClassLoader classLoader) {
-        try {
-            Class<?> cls = Class.forName(DYNAMIC_ISLAND_BASE_CONTENT_VIEW_CLASS, false, classLoader);
-            for (Method m : cls.getDeclaredMethods()) {
-                if (!"calculateMaxWidthWithSmall".equals(m.getName())) continue;
-                m.setAccessible(true);
-                XposedBridge.hookMethod(m, new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        if (!isInOurIslandBind()) return;
-                        Object r = param.getResult();
-                        if (!(r instanceof Number)) return;
-                        int old = ((Number) r).intValue();
-                        int widened = widenWidth(old);
-                        if (param.thisObject instanceof View) {
-                            View v = (View) param.thisObject;
-                            int vw = v.getWidth() - v.getPaddingLeft() - v.getPaddingRight();
-                            if (vw > widened) widened = vw;
-                        }
-                        if (r instanceof Integer) {
-                            param.setResult(widened);
-                        } else if (r instanceof Long) {
-                            param.setResult((long) widened);
-                        } else if (r instanceof Float) {
-                            param.setResult((float) widened);
-                        } else if (r instanceof Double) {
-                            param.setResult((double) widened);
-                        }
-                    }
-                });
-            }
-        } catch (Throwable t) {
-            swallowOptionalHookFailure(t);
-        }
-    }
-
-    private int widenWidth(int value) {
-        if (value <= 0) return value;
-        long widened = value;
-        widened = widened + Math.max(80L, widened / 2L);
-        if (widened > Integer.MAX_VALUE) return Integer.MAX_VALUE;
-        return (int) widened;
-    }
-
-    private void hookExactTextLimitMethods(ClassLoader classLoader) {
-        hookTextSetterLikeMethod(TEMPLATE_FACTORY_V3_CLASS, "setTextVisibleAndText", classLoader);
-        hookTextSetterLikeMethod(MODULE_TEXT_VIEW_HOLDER_CLASS, "textChanged", classLoader);
-        hookTextSetterLikeMethod(ISLAND_TEXT_VIEW_HOLDER_CLASS, "textChanged", classLoader);
-    }
-
-    private void hookIslandRightTextFirstLimit(ClassLoader classLoader) {
-        try {
-            Class<?> cls = Class.forName(ISLAND_RIGHT_TEXT_VIEW_HOLDER_CLASS, false, classLoader);
-            for (Method m : cls.getDeclaredMethods()) {
-                if (!"updateWidth".equals(m.getName())) continue;
-                Class<?>[] p = m.getParameterTypes();
-                if (p.length != 1 || p[0] != int.class) continue;
-                m.setAccessible(true);
-                XposedBridge.hookMethod(m, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) {
-                        if (!isInOurIslandBind()) return;
-                        if (param.args == null || param.args.length == 0) return;
-                        if (!(param.args[0] instanceof Integer)) return;
-                        Object self = param.thisObject;
-                        if (self == null) return;
-                        int width = (Integer) param.args[0];
-                        if (width <= 0) return;
-
-                        Object ctxObj = invokeNoArg(self, "getContext");
-                        if (!(ctxObj instanceof android.content.Context)) return;
-                        android.content.Context ctx = (android.content.Context) ctxObj;
-                        int bonus = 0;
-                        bonus += getDimenPx(ctx, "island_area_padding");
-                        bonus += getDimenPx(ctx, "text_padding");
-                        bonus += getDimenPx(ctx, "island_area_padding_cutout");
-                        bonus += getDimenPx(ctx, "island_text_padding_inner");
-                        if (bonus <= 0) return;
-
-                        long widened = (long) width + bonus;
-                        if (widened > Integer.MAX_VALUE) widened = Integer.MAX_VALUE;
-                        param.args[0] = (int) widened;
-                    }
-                });
-            }
-        } catch (Throwable t) {
-            swallowOptionalHookFailure(t);
-        }
-    }
-
-    // 尺寸资源属于宿主，名称查找用于兼容不同系统版本。
-    @android.annotation.SuppressLint("DiscouragedApi")
-    private int getDimenPx(android.content.Context ctx, String name) {
-        if (ctx == null || TextUtils.isEmpty(name)) return 0;
-        try {
-            int id = ctx.getResources().getIdentifier(name, "dimen", ctx.getPackageName());
-            if (id == 0) {
-                id = ctx.getResources().getIdentifier(name, "dimen", "com.android.systemui");
-            }
-            if (id == 0) return 0;
-            return ctx.getResources().getDimensionPixelSize(id);
-        } catch (Throwable ignore) {
-            return 0;
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
     private void hookFocusSmallSubtitleFirstLimit(ClassLoader classLoader) {
         hookSubtitleWidthInSetViewWidth(classLoader);
-        hookModuleTextButton2Bind(classLoader, MODULE_TEXT_BUTTON_VIEW_HOLDER_CLASS);
-        hookModuleBindForSubtitle(classLoader, MODULE_DECO_PORT_TEXT_BUTTON_VIEW_HOLDER_CLASS);
+        hookModuleTextButton2Bind(classLoader);
+        hookModuleBindForSubtitle(classLoader);
     }
 
-    private void hookModuleTextButton2Bind(ClassLoader classLoader, final String className) {
+    private void hookModuleTextButton2Bind(ClassLoader classLoader) {
         try {
-            Class<?> cls = Class.forName(className, false, classLoader);
+            Class<?> cls = Class.forName(MODULE_TEXT_BUTTON_VIEW_HOLDER_CLASS, false, classLoader);
             for (Method m : cls.getDeclaredMethods()) {
                 if (!"bind".equals(m.getName())) continue;
                 if (m.getParameterTypes().length != 2) continue;
@@ -1381,9 +1188,8 @@ public class SystemUiHook {
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (!isHolderOwned(param.thisObject)) return;
+                        if (isHolderUnowned(param.thisObject)) return;
                         Object self = param.thisObject;
-                        if (self == null) return;
                         Object tpl = (param.args != null && param.args.length > 0) ? param.args[0] : null;
                         ensureSubTitleFieldVisible(self, tpl, "smallSubTitle");
                         syncPureTimerToSubtitle(self, tpl, "smallSubTitle", "chronometerHint");
@@ -1410,15 +1216,11 @@ public class SystemUiHook {
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) {
-                        if (!isHolderOwned(param.thisObject)) return;
+                        if (isHolderUnowned(param.thisObject)) return;
                         if (param.args == null || param.args.length < 3) return;
                         Object tvObj = param.args[0];
-                        if (!(tvObj instanceof TextView)) return;
-                        TextView tv = (TextView) tvObj;
-                        boolean subtitleTarget = isSubtitleTargetView(tv);
-                        boolean titleTarget = isTitleTargetView(tv);
-                        if (!subtitleTarget && !titleTarget) return;
-                        if (!subtitleTarget) return;
+                        if (!(tvObj instanceof TextView tv)) return;
+                        if (!isSubtitleTargetView(tv)) return;
 
                         CharSequence cs = tv.getText();
                         if (TextUtils.isEmpty(cs)) return;
@@ -1426,26 +1228,24 @@ public class SystemUiHook {
                         int desired = (int) Math.ceil(tv.getPaint().measureText(cs.toString()))
                                 + tv.getPaddingLeft() + tv.getPaddingRight();
                         ViewParent parent = tv.getParent();
-                        if (parent instanceof View) {
-                            View pv = (View) parent;
+                        if (parent instanceof View pv) {
                             int available = pv.getWidth() - pv.getPaddingLeft() - pv.getPaddingRight();
                             if (available > 0) desired = Math.min(desired, available);
                         }
                         if (desired <= 0) return;
 
-                        int oldW = param.args[1] instanceof Integer ? (Integer) param.args[1] : 0;
-                        int minW = param.args[2] instanceof Integer ? (Integer) param.args[2] : 0;
+                        int oldW = param.args[1] instanceof Integer value ? value : 0;
+                        int minW = param.args[2] instanceof Integer value ? value : 0;
                         if (oldW < desired) param.args[1] = desired;
                         if (minW < 1) param.args[2] = 1;
                     }
 
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (!isHolderOwned(param.thisObject)) return;
+                        if (isHolderUnowned(param.thisObject)) return;
                         if (param.args == null || param.args.length < 1) return;
                         Object tvObj = param.args[0];
-                        if (!(tvObj instanceof TextView)) return;
-                        TextView tv = (TextView) tvObj;
+                        if (!(tvObj instanceof TextView tv)) return;
                         boolean subtitleTarget = isSubtitleTargetView(tv);
                         boolean titleTarget = isTitleTargetView(tv);
                         if (!subtitleTarget && !titleTarget) return;
@@ -1458,7 +1258,8 @@ public class SystemUiHook {
                         sReentry.set(Boolean.TRUE);
                         try {
                             tv.setVisibility(View.VISIBLE);
-                        } catch (Throwable ignore) {
+                        } catch (Throwable failure) {
+                            swallowOptionalHookFailure(failure);
                         } finally {
                             sReentry.set(Boolean.FALSE);
                         }
@@ -1480,8 +1281,7 @@ public class SystemUiHook {
             if (idName.contains("small_sub_title")) return true;
             if (idName.contains("focus_small_subtitle")) return true;
             if (idName.contains("focus_small_sub_title")) return true;
-            if (idName.endsWith("subtitle")) return true;
-            if (idName.endsWith("sub_title")) return true;
+            return idName.endsWith("subtitle") || idName.endsWith("sub_title");
         }
         return false;
     }
@@ -1494,15 +1294,13 @@ public class SystemUiHook {
         if (idName.contains("small_subtitle") || idName.contains("sub_title") || idName.contains("subtitle")) {
             return false;
         }
-        if (idName.contains("focus_small_title")) return true;
-        if (idName.equals("focus_title")) return true;
-        if (idName.endsWith("_title") && idName.contains("focus")) return true;
-        return false;
+        return idName.contains("focus_small_title") || idName.equals("focus_title")
+                || (idName.endsWith("_title") && idName.contains("focus"));
     }
 
-    private void hookModuleBindForSubtitle(ClassLoader classLoader, final String className) {
+    private void hookModuleBindForSubtitle(ClassLoader classLoader) {
         try {
-            Class<?> cls = Class.forName(className, false, classLoader);
+            Class<?> cls = Class.forName(MODULE_DECO_PORT_TEXT_BUTTON_VIEW_HOLDER_CLASS, false, classLoader);
             for (Method m : cls.getDeclaredMethods()) {
                 if (!"bind".equals(m.getName())) continue;
                 if (m.getParameterTypes().length != 2) continue;
@@ -1510,16 +1308,15 @@ public class SystemUiHook {
                 XposedBridge.hookMethod(m, new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (!isHolderOwned(param.thisObject)) return;
+                        if (isHolderUnowned(param.thisObject)) return;
                         Object self = param.thisObject;
-                        if (self == null) return;
                         // hintInfo.type=2(按钮组件2): subTitle -> focusSmallSubtitleView
                         Object tpl = (param.args != null && param.args.length > 0) ? param.args[0] : null;
                         ensureSubTitleFieldVisible(self, tpl, "focusSmallSubtitleView");
                         syncPureTimerToSubtitle(self, tpl, "focusSmallSubtitleView", "chronometerHintView");
                         clearTitleWhenPureTimer(self, tpl);
                         fixTimerTitleAndSubtitleLeakForDecoPort(self);
-                        forceSmallSubtitleNoFirstTrim(self, "focusSmallSubtitleView");
+                        forceSmallSubtitleNoFirstTrim(self);
                         // 组件2里 title 也在同一容器，避免相互挤压时再次触发首段省略
                     }
                 });
@@ -1529,10 +1326,9 @@ public class SystemUiHook {
         }
     }
 
-    private void forceSmallSubtitleNoFirstTrim(Object host, String fieldName) {
-        Object tvObj = getFieldValue(host, fieldName);
-        if (!(tvObj instanceof TextView)) return;
-        TextView tv = (TextView) tvObj;
+    private void forceSmallSubtitleNoFirstTrim(Object host) {
+        Object tvObj = getFieldValue(host, "focusSmallSubtitleView");
+        if (!(tvObj instanceof TextView tv)) return;
         sReentry.set(Boolean.TRUE);
         try {
             tv.setMaxWidth(Integer.MAX_VALUE / 4);
@@ -1541,7 +1337,8 @@ public class SystemUiHook {
             tv.setMaxLines(1);
             tv.setHorizontallyScrolling(false);
             tv.setEllipsize(null);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         } finally {
             sReentry.set(Boolean.FALSE);
         }
@@ -1551,8 +1348,7 @@ public class SystemUiHook {
 
     private void ensureSubTitleFieldVisible(Object host, Object templateObj, String fieldName) {
         Object tvObj = getFieldValue(host, fieldName);
-        if (!(tvObj instanceof TextView)) return;
-        TextView tv = (TextView) tvObj;
+        if (!(tvObj instanceof TextView tv)) return;
         String text = extractSubTitle(host, templateObj);
         if (TextUtils.isEmpty(text)) {
             // 显式清空，避免Recycler/复用导致上一阶段文本残留
@@ -1562,7 +1358,8 @@ public class SystemUiHook {
                 tv.setSelected(false);
                 tv.setEllipsize(null);
                 tv.setHorizontallyScrolling(false);
-            } catch (Throwable ignore) {
+            } catch (Throwable failure) {
+                swallowOptionalHookFailure(failure);
             } finally {
                 sReentry.set(Boolean.FALSE);
             }
@@ -1582,7 +1379,8 @@ public class SystemUiHook {
                 tv.setLayoutParams(lp);
             }
             tv.requestLayout();
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         } finally {
             sReentry.set(Boolean.FALSE);
         }
@@ -1597,27 +1395,28 @@ public class SystemUiHook {
             if (hint == null) return;
             Object timerInfo = invokeNoArg(hint, "getTimerInfo");
             Object titleObj = invokeNoArg(hint, "getTitle");
-            String title = titleObj instanceof String ? (String) titleObj : "";
+            String title = titleObj instanceof String value ? value : "";
             if (timerInfo == null) return;
             if (!TextUtils.isEmpty(title)) return;
             clearTitleField(host, "focusSmallTitle");
             clearTitleField(host, "focusTitle");
             clearTitleField(host, "focusTitleView");
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
     private void clearTitleField(Object host, String fieldName) {
         Object tvObj = getFieldValue(host, fieldName);
-        if (!(tvObj instanceof TextView)) return;
-        TextView tv = (TextView) tvObj;
+        if (!(tvObj instanceof TextView tv)) return;
         sReentry.set(Boolean.TRUE);
         try {
             tv.setText("");
             tv.setSelected(false);
             tv.setEllipsize(null);
             tv.setHorizontallyScrolling(false);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         } finally {
             sReentry.set(Boolean.FALSE);
         }
@@ -1629,20 +1428,19 @@ public class SystemUiHook {
             Object chronoObj = getFieldValue(host, "chronometerHint");
             Object titleObj = getFieldValue(host, "focusSmallTitle");
             Object subObj = getFieldValue(host, "smallSubTitle");
-            if (chronoObj instanceof View && titleObj instanceof TextView) {
-                View chrono = (View) chronoObj;
-                TextView titleTv = (TextView) titleObj;
+            if (chronoObj instanceof View chrono && titleObj instanceof TextView titleTv) {
                 if (chrono.getVisibility() == View.VISIBLE) {
                     clearTextViewNow(titleTv);
                 }
             }
             String subtitle = "";
             Object subStr = invokeNoArg(host, "getSubtitle");
-            if (subStr instanceof String) subtitle = (String) subStr;
-            if (subObj instanceof TextView && TextUtils.isEmpty(subtitle)) {
-                clearTextViewNow((TextView) subObj);
+            if (subStr instanceof String value) subtitle = value;
+            if (subObj instanceof TextView subtitleView && TextUtils.isEmpty(subtitle)) {
+                clearTextViewNow(subtitleView);
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -1652,20 +1450,19 @@ public class SystemUiHook {
             Object chronoObj = getFieldValue(host, "chronometerHintView");
             Object titleObj = getFieldValue(host, "focusSmallTitleView");
             Object subObj = getFieldValue(host, "focusSmallSubtitleView");
-            if (chronoObj instanceof View && titleObj instanceof TextView) {
-                View chrono = (View) chronoObj;
-                TextView titleTv = (TextView) titleObj;
+            if (chronoObj instanceof View chrono && titleObj instanceof TextView titleTv) {
                 if (chrono.getVisibility() == View.VISIBLE) {
                     clearTextViewNow(titleTv);
                 }
             }
             String subtitle = "";
             Object subStr = invokeNoArg(host, "getSubtitle");
-            if (subStr instanceof String) subtitle = (String) subStr;
-            if (subObj instanceof TextView && TextUtils.isEmpty(subtitle)) {
-                clearTextViewNow((TextView) subObj);
+            if (subStr instanceof String value) subtitle = value;
+            if (subObj instanceof TextView subtitleView && TextUtils.isEmpty(subtitle)) {
+                clearTextViewNow(subtitleView);
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -1678,7 +1475,8 @@ public class SystemUiHook {
             tv.setSelected(false);
             tv.setEllipsize(null);
             tv.setHorizontallyScrolling(false);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         } finally {
             sReentry.set(Boolean.FALSE);
         }
@@ -1692,14 +1490,12 @@ public class SystemUiHook {
             Object timerInfo = invokeNoArg(hint, "getTimerInfo");
             if (timerInfo == null) return;
             Object subObj = invokeNoArg(hint, "getSubTitle");
-            String sub = subObj instanceof String ? ((String) subObj).trim() : "";
+            String sub = subObj instanceof String value ? value.trim() : "";
             if (!"{倒计时}".equals(sub) && !"{正计时}".equals(sub)) return;
 
             Object subTvObj = getFieldValue(host, subFieldName);
             Object chronoObj = getFieldValue(host, chronoFieldName);
-            if (!(subTvObj instanceof TextView) || !(chronoObj instanceof TextView)) return;
-            TextView subTv = (TextView) subTvObj;
-            TextView chronoTv = (TextView) chronoObj;
+            if (!(subTvObj instanceof TextView subTv) || !(chronoObj instanceof TextView chronoTv)) return;
 
             sReentry.set(Boolean.TRUE);
             try {
@@ -1713,13 +1509,13 @@ public class SystemUiHook {
                 sReentry.set(Boolean.FALSE);
             }
 
-            if (chronoObj instanceof Chronometer) {
-                Chronometer chronometer = (Chronometer) chronoObj;
+            if (chronoObj instanceof Chronometer chronometer) {
                 chronometer.setOnChronometerTickListener(c -> {
                     try {
                         sReentry.set(Boolean.TRUE);
                         subTv.setText(c.getText());
-                    } catch (Throwable ignore) {
+                    } catch (Throwable failure) {
+                        swallowOptionalHookFailure(failure);
                     } finally {
                         sReentry.set(Boolean.FALSE);
                     }
@@ -1727,7 +1523,8 @@ public class SystemUiHook {
             }
             ensureAdaptiveWatcher(subTv);
             applyAdaptiveMarquee(subTv);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -1736,56 +1533,15 @@ public class SystemUiHook {
             if (templateObj != null) {
                 Object hint = invokeNoArg(templateObj, "getHintInfo");
                 Object sub = hint == null ? null : invokeNoArg(hint, "getSubTitle");
-                if (sub instanceof String && !TextUtils.isEmpty((String) sub)) {
-                    return (String) sub;
+                if (sub instanceof String subtitle && !TextUtils.isEmpty(subtitle)) {
+                    return subtitle;
                 }
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
         Object hostSub = invokeNoArg(host, "getSubtitle");
-        return hostSub instanceof String ? (String) hostSub : "";
-    }
-
-    private void hookTextSetterLikeMethod(String className, String methodName, ClassLoader classLoader) {
-        try {
-            Class<?> cls = Class.forName(className, false, classLoader);
-            for (Method m : cls.getDeclaredMethods()) {
-                if (!methodName.equals(m.getName())) continue;
-                m.setAccessible(true);
-                XposedBridge.hookMethod(m, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) {
-                        if (!isInOurIslandBind()) return;
-                        if (param.args == null || param.args.length == 0) return;
-                        for (int i = 0; i < param.args.length; i++) {
-                            Object arg = param.args[i];
-                            if (arg instanceof CharSequence) {
-                                String expanded = expandFromAllCachedTexts(arg.toString());
-                                if (!TextUtils.isEmpty(expanded) && !expanded.equals(arg.toString())) {
-                                    param.args[i] = expanded;
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        } catch (Throwable t) {
-            swallowOptionalHookFailure(t);
-        }
-    }
-
-    private String expandFromAllCachedTexts(String src) {
-        if (TextUtils.isEmpty(src) || sFullTextByKey.isEmpty()) return src;
-        for (CachedTexts t : sFullTextByKey.values()) {
-            if (t == null) continue;
-            if (!TextUtils.isEmpty(t.left) && isLikelyFirstLimitTrim(src, t.left)) {
-                return t.left;
-            }
-            if (!TextUtils.isEmpty(t.right) && isLikelyFirstLimitTrim(src, t.right)) {
-                return t.right;
-            }
-        }
-        return src;
+        return hostSub instanceof String value ? value : "";
     }
 
     private void hookIslandExpandedView(ClassLoader classLoader) {
@@ -1795,8 +1551,8 @@ public class SystemUiHook {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             if (!resolveOwnedForFocusContent(param.thisObject)) return;
-                            View root = (param.args != null && param.args.length > 0 && param.args[0] instanceof View)
-                                    ? (View) param.args[0] : null;
+                            View root = (param.args != null && param.args.length > 0 && param.args[0] instanceof View view)
+                                    ? view : null;
                             tuneIslandViewTree(root);
                         }
                     });
@@ -1810,8 +1566,8 @@ public class SystemUiHook {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             if (!resolveOwnedForFocusContent(param.thisObject)) return;
-                            View root = (param.args != null && param.args.length > 0 && param.args[0] instanceof View)
-                                    ? (View) param.args[0] : null;
+                            View root = (param.args != null && param.args.length > 0 && param.args[0] instanceof View view)
+                                    ? view : null;
                             tuneIslandViewTree(root);
                         }
                     });
@@ -1829,7 +1585,6 @@ public class SystemUiHook {
         hookFocusSetter(classLoader, "setTinyViewDarkModal");
         hookFocusSetter(classLoader, "setTinyKeyguardView");
         hookFocusSetter(classLoader, "setTinyViewKeyguardDark");
-        hookFocusViewMapSetter(classLoader);
         hookFocusKeySetter(classLoader);
 
         try {
@@ -1838,8 +1593,7 @@ public class SystemUiHook {
                     new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) {
-                            // Ensure runtime island content hooks are installed so
-                            // owned-bind gating (isInOurIslandBind) can work correctly.
+                            // Ensure runtime island content hooks track owned notification keys.
                             installRuntimeIslandContentHook(param.thisObject);
                             // 不再改写岛A/B文本，避免未展开态宽度异常挤压状态栏图标。
                         }
@@ -1862,14 +1616,8 @@ public class SystemUiHook {
 
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                View root = (param.args != null && param.args.length > 0 && param.args[0] instanceof View)
-                                        ? (View) param.args[0] : null;
-                                if (!isActiveRoot(root)) return;
-                            } finally {
-                                sCurrentBindOwned.set(Boolean.FALSE);
-                                exitIslandBind();
-                            }
+                            sCurrentBindOwned.set(Boolean.FALSE);
+                            exitIslandBind();
                         }
                     });
         } catch (Throwable t) {
@@ -1882,39 +1630,14 @@ public class SystemUiHook {
         String key = sFocusContentKeyMap.get(focusContentObj);
         if (TextUtils.isEmpty(key)) {
             Object keyObj = invokeNoArg(focusContentObj, "getKey");
-            if (keyObj instanceof String) {
-                key = (String) keyObj;
+            if (keyObj instanceof String value) {
+                key = value;
                 if (!TextUtils.isEmpty(key)) {
                     sFocusContentKeyMap.put(focusContentObj, key);
                 }
             }
         }
         return isOwnedNotifyKey(key);
-    }
-
-    private void hookFocusViewMapSetter(ClassLoader classLoader) {
-        try {
-            findAndHookMethod(FOCUS_CONTENT_CLASS, classLoader,
-                    "setFocusNotificationViewMap", Map.class, new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (param.args == null || param.args.length == 0) return;
-                            Object arg = param.args[0];
-                            if (!(arg instanceof Map)) return;
-                            Map<?, ?> map = (Map<?, ?>) arg;
-                            for (Map.Entry<?, ?> e : map.entrySet()) {
-                                Object v = e.getValue();
-                                if (v instanceof View) {
-                                    View vv = (View) v;
-                                    if (isActiveRoot(vv)) {
-                                    }
-                                }
-                            }
-                        }
-                    });
-        } catch (Throwable t) {
-            swallowOptionalHookFailure(t);
-        }
     }
 
     private void hookFocusKeySetter(ClassLoader classLoader) {
@@ -1925,8 +1648,8 @@ public class SystemUiHook {
                         protected void afterHookedMethod(MethodHookParam param) {
                             Object self = param.thisObject;
                             if (self == null) return;
-                            String key = (param.args != null && param.args.length > 0 && param.args[0] instanceof String)
-                                    ? (String) param.args[0] : "";
+                            String key = (param.args != null && param.args.length > 0 && param.args[0] instanceof String value)
+                                    ? value : "";
                             if (!TextUtils.isEmpty(key)) {
                                 sFocusContentKeyMap.put(self, key);
                             }
@@ -1964,19 +1687,12 @@ public class SystemUiHook {
                             boolean owned = false;
                             if (param.args != null && param.args.length > 0) {
                                 owned = markOwnedKeyFromDynamicIslandData(param.args[0]);
-                                if (owned) {
-                                    tuneDynamicIslandData(param.args[0]);
-                                }
                             }
                             sCurrentBindOwned.set(owned);
                         }
 
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
-                            boolean owned = Boolean.TRUE.equals(sCurrentBindOwned.get());
-                            if (owned && param.args != null && param.args.length > 0) {
-                                applyFullTextToRenderedViews(param.args[0]);
-                            }
                             sCurrentBindOwned.set(Boolean.FALSE);
                             exitIslandBind();
                         }
@@ -1993,264 +1709,12 @@ public class SystemUiHook {
         for (Method m : controller.getClass().getMethods()) {
             if (m.getParameterTypes().length != 0) continue;
             Class<?> ret = m.getReturnType();
-            if (ret == null || !DYNAMIC_ISLAND_CONTENT_IFACE.equals(ret.getName())) continue;
+            if (!DYNAMIC_ISLAND_CONTENT_IFACE.equals(ret.getName())) continue;
             try {
                 m.setAccessible(true);
                 return m.invoke(controller);
-            } catch (Throwable ignore) {
-            }
-        }
-        return null;
-    }
-
-    private void tuneDynamicIslandData(Object dataObj) {
-        rewriteTickerDataWithFullText(dataObj);
-    }
-
-    private void cacheFullTextsFromModel(Object[] args) {
-        if (args == null || args.length < 2) return;
-        if (!(args[0] instanceof Bundle)) return;
-        Object model = args[1];
-        if (model == null) return;
-        try {
-            String key = ((Bundle) args[0]).getString("notifyId", "");
-            if (TextUtils.isEmpty(key)) return;
-            String left = readModelText(model, "getLeft");
-            String right = readModelText(model, "getRight");
-            if (TextUtils.isEmpty(left) && TextUtils.isEmpty(right)) return;
-            CachedTexts texts = new CachedTexts(left, right);
-            sFullTextByKey.put(key, texts);
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private void cacheFullTextsFromIslandParam(Object[] args) {
-        if (args == null || args.length < 1) return;
-        if (!(args[0] instanceof Bundle)) return;
-        try {
-            Bundle b = (Bundle) args[0];
-            String key = b.getString("notifyId", "");
-            String json = b.getString("island_param", "");
-            if (TextUtils.isEmpty(key) || TextUtils.isEmpty(json)) return;
-
-            JSONObject root = new JSONObject(json);
-            String left = "";
-            String right = "";
-
-            JSONObject l = root.optJSONObject("left");
-            JSONObject r = root.optJSONObject("right");
-            if (l != null) {
-                JSONObject tp = l.optJSONObject("textParams");
-                if (tp == null) tp = l.optJSONObject("text_params");
-                if (tp != null) left = tp.optString("text", "");
-            }
-            if (r != null) {
-                JSONObject tp = r.optJSONObject("textParams");
-                if (tp == null) tp = r.optJSONObject("text_params");
-                if (tp != null) right = tp.optString("text", "");
-            }
-
-            if (TextUtils.isEmpty(left) && TextUtils.isEmpty(right)) return;
-            CachedTexts texts = new CachedTexts(left, right);
-            sFullTextByKey.put(key, texts);
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private String readModelText(Object model, String sideMethod) {
-        try {
-            Object side = invokeNoArg(model, sideMethod);
-            if (side == null) return "";
-            Object textParams = invokeNoArg(side, "getTextParams");
-            if (textParams == null) return "";
-            Object text = invokeNoArg(textParams, "getText");
-            return text instanceof String ? (String) text : "";
-        } catch (Throwable ignore) {
-            return "";
-        }
-    }
-
-    private void rewriteTickerDataWithFullText(Object dataObj) {
-        try {
-            if (!isOwnedDynamicIslandData(dataObj)) return;
-            Object keyObj = invokeNoArg(dataObj, "getKey");
-            if (!(keyObj instanceof String)) return;
-            String key = (String) keyObj;
-            if (TextUtils.isEmpty(key)) return;
-            CachedTexts cached = pickCachedTexts(key);
-            if (cached == null) return;
-
-            Object tickerObj = invokeNoArg(dataObj, "getTickerData");
-            if (!(tickerObj instanceof String)) return;
-            String tickerData = (String) tickerObj;
-            if (TextUtils.isEmpty(tickerData)) return;
-
-            JSONObject root = new JSONObject(tickerData);
-            JSONObject big = root.optJSONObject("bigIslandArea");
-            if (big == null) return;
-
-            if (!TextUtils.isEmpty(cached.left)) {
-                JSONObject left = big.optJSONObject("imageTextInfoLeft");
-                if (left != null) {
-                    JSONObject textInfo = left.optJSONObject("textInfo");
-                    if (textInfo != null) textInfo.put("title", cached.left);
-                }
-            }
-            if (!TextUtils.isEmpty(cached.right)) {
-                JSONObject right = big.optJSONObject("imageTextInfoRight");
-                if (right != null) {
-                    JSONObject textInfo = right.optJSONObject("textInfo");
-                    if (textInfo != null) textInfo.put("title", cached.right);
-                }
-            }
-
-            String newTicker = root.toString();
-            if (!tickerData.equals(newTicker)) {
-                invokeOneArg(dataObj, "setTickerData", String.class, newTicker);
-            }
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private void applyFullTextToRenderedViews(Object dataObj) {
-        try {
-            if (!isOwnedDynamicIslandData(dataObj)) return;
-            Object keyObj = invokeNoArg(dataObj, "getKey");
-            String key = keyObj instanceof String ? (String) keyObj : "";
-            CachedTexts cached = pickCachedTexts(key);
-            if (cached == null) return;
-
-            View real = asView(invokeNoArg(dataObj, "getView"));
-            View fake = asView(invokeNoArg(dataObj, "getFakeView"));
-            applyFullTextToTree(real, cached);
-            applyFullTextToTree(fake, cached);
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private CachedTexts pickCachedTexts(String key) {
-        if (TextUtils.isEmpty(key)) return null;
-        return sFullTextByKey.get(key);
-    }
-
-    private void applyFullTextToTree(View root, CachedTexts cached) {
-        if (root == null || cached == null) return;
-        TextView left = findTextViewByIdName(root, "left_text");
-        TextView right = findTextViewByIdName(root, "right_text");
-        boolean hit = false;
-        if (left != null && !TextUtils.isEmpty(cached.left)) {
-            left.setText(cached.left);
-            applyNoEllipsize(left);
-            hit = true;
-        }
-        if (right != null && !TextUtils.isEmpty(cached.right)) {
-            right.setText(cached.right);
-            applyNoEllipsize(right);
-            hit = true;
-        }
-        java.util.ArrayList<TextView> all = new java.util.ArrayList<>();
-        collectTextViews(root, all);
-        for (TextView tv : all) {
-            String cur = String.valueOf(tv.getText());
-            if (!TextUtils.isEmpty(cached.left) && isLikelyFirstLimitTrim(cur, cached.left)) {
-                tv.setText(cached.left);
-                applyNoEllipsize(tv);
-                hit = true;
-                continue;
-            }
-            if (!TextUtils.isEmpty(cached.right) && isLikelyFirstLimitTrim(cur, cached.right)) {
-                tv.setText(cached.right);
-                applyNoEllipsize(tv);
-                hit = true;
-            }
-        }
-        if (!hit && !all.isEmpty()) {
-            if (!TextUtils.isEmpty(cached.left)) {
-                all.get(0).setText(cached.left);
-                applyNoEllipsize(all.get(0));
-                hit = true;
-            }
-            if (all.size() > 1 && !TextUtils.isEmpty(cached.right)) {
-                all.get(1).setText(cached.right);
-                applyNoEllipsize(all.get(1));
-                hit = true;
-            }
-        }
-    }
-
-    private boolean isLikelyFirstLimitTrim(String current, String full) {
-        if (TextUtils.isEmpty(current) || TextUtils.isEmpty(full)) return false;
-        String cur = current.trim();
-        String target = full.trim();
-        if (target.equals(cur)) return false;
-        String normalized = cur.replace("...", "").replace("\u2026", "").trim();
-        if (!TextUtils.isEmpty(normalized)) {
-            if (target.startsWith(normalized)) return true;
-            if (normalized.length() >= 4) {
-                String head = normalized.substring(0, Math.min(4, normalized.length()));
-                return target.startsWith(head);
-            }
-            return false;
-        }
-        String curNoDots = cur.replace("…", "").replace("...", "");
-        if (TextUtils.isEmpty(curNoDots)) return false;
-        if (target.startsWith(curNoDots)) return true;
-        if (curNoDots.length() >= 4) {
-            String head = curNoDots.substring(0, Math.min(4, curNoDots.length()));
-            return target.startsWith(head);
-        }
-        return false;
-    }
-
-    private void applyCachedTextToGenericRoot(Object focusContentObj, View root) {
-        if (root == null) return;
-        if (focusContentObj == null) return;
-        String key = sFocusContentKeyMap.get(focusContentObj);
-        if (TextUtils.isEmpty(key)) return;
-        if (!isOwnedNotifyKey(key)) return;
-        CachedTexts cached = sFullTextByKey.get(key);
-        if (cached == null) return;
-        applyFullTextToTree(root, cached);
-    }
-
-    private void collectTextViews(View root, java.util.List<TextView> out) {
-        if (root == null) return;
-        if (root instanceof TextView) {
-            TextView tv = (TextView) root;
-            if (tv.getWidth() > 0 && tv.getWindowToken() != null) {
-                out.add(tv);
-            }
-        }
-        if (root instanceof ViewGroup) {
-            ViewGroup vg = (ViewGroup) root;
-            for (int i = 0; i < vg.getChildCount(); i++) {
-                collectTextViews(vg.getChildAt(i), out);
-            }
-        }
-    }
-
-    private static boolean isActiveRoot(View root) {
-        if (root == null) return false;
-        if (root.getWindowToken() == null) return false;
-        if (root.getVisibility() != View.VISIBLE) return false;
-        if (root.getAlpha() <= 0f) return false;
-        return root.getWidth() > 0 || root.getHeight() > 0;
-    }
-
-
-    private TextView findTextViewByIdName(View root, String idName) {
-        if (root == null) return null;
-        if (root instanceof TextView) {
-            int id = root.getId();
-            if (id != View.NO_ID && idName.equals(safeIdName(root, id))) {
-                return (TextView) root;
-            }
-        }
-        if (root instanceof ViewGroup) {
-            ViewGroup vg = (ViewGroup) root;
-            for (int i = 0; i < vg.getChildCount(); i++) {
-                TextView t = findTextViewByIdName(vg.getChildAt(i), idName);
-                if (t != null) return t;
+            } catch (Throwable failure) {
+                swallowOptionalHookFailure(failure);
             }
         }
         return null;
@@ -2262,50 +1726,18 @@ public class SystemUiHook {
             Method m = target.getClass().getMethod(methodName);
             m.setAccessible(true);
             return m.invoke(target);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
             return null;
         }
     }
 
-    private static void invokeOneArg(Object target, String methodName, Class<?> argType, Object arg) {
-        if (target == null) return;
-        try {
-            Method m = target.getClass().getMethod(methodName, argType);
-            m.setAccessible(true);
-            m.invoke(target, arg);
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private static boolean isReentry() {
-        return Boolean.TRUE.equals(sReentry.get());
-    }
-
-    private static void applyNoEllipsize(TextView tv) {
-        sReentry.set(Boolean.TRUE);
-        try {
-            tv.setSingleLine(true);
-            tv.setMaxLines(1);
-            tv.setHorizontallyScrolling(false);
-            tv.setEllipsize(null);
-            tv.setSelected(false);
-            tv.setFocusable(false);
-            tv.setFocusableInTouchMode(false);
-            tv.requestLayout();
-        } finally {
-            sReentry.set(Boolean.FALSE);
-        }
-        ensureAdaptiveWatcher(tv);
-        applyAdaptiveMarquee(tv);
-    }
-
     private static void tuneIslandViewTree(View root) {
         if (root == null) return;
-        if (root instanceof TextView) {
-            tuneIslandText((TextView) root);
+        if (root instanceof TextView textView) {
+            tuneIslandText(textView);
         }
-        if (root instanceof ViewGroup) {
-            ViewGroup vg = (ViewGroup) root;
+        if (root instanceof ViewGroup vg) {
             for (int i = 0; i < vg.getChildCount(); i++) {
                 tuneIslandViewTree(vg.getChildAt(i));
             }
@@ -2325,7 +1757,8 @@ public class SystemUiHook {
             tv.requestLayout();
             ensureAdaptiveWatcher(tv);
             applyAdaptiveMarquee(tv);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
         }
     }
 
@@ -2333,39 +1766,31 @@ public class SystemUiHook {
         if (tv == null) return;
         if (sAdaptiveWatchers.containsKey(tv)) return;
         sAdaptiveWatchers.put(tv, Boolean.TRUE);
-        tv.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
-            @Override
-            public void onLayoutChange(View v, int left, int top, int right, int bottom,
-                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                applyAdaptiveMarquee(tv);
-            }
-        });
+        tv.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                applyAdaptiveMarquee(tv));
     }
 
     private static void applyAdaptiveMarquee(final TextView tv) {
         if (tv == null) return;
-        Runnable task = new Runnable() {
-            @Override
-            public void run() {
-                if (tv.getLayout() == null) return;
-                CharSequence cs = tv.getText();
-                if (cs == null) return;
-                float textWidth = tv.getPaint().measureText(cs.toString());
-                int available = tv.getWidth() - tv.getPaddingLeft() - tv.getPaddingRight();
-                if (available <= 0) return;
-                boolean needMarquee = textWidth > (available + 1f);
+        Runnable task = () -> {
+            if (tv.getLayout() == null) return;
+            CharSequence cs = tv.getText();
+            if (cs == null) return;
+            float textWidth = tv.getPaint().measureText(cs.toString());
+            int available = tv.getWidth() - tv.getPaddingLeft() - tv.getPaddingRight();
+            if (available <= 0) return;
+            boolean needMarquee = textWidth > (available + 1f);
 
-                sReentry.set(Boolean.TRUE);
-                try {
-                    tv.setHorizontallyScrolling(needMarquee);
-                    tv.setEllipsize(needMarquee ? TextUtils.TruncateAt.MARQUEE : null);
-                    tv.setSelected(needMarquee);
-                    tv.setFocusable(needMarquee);
-                    tv.setFocusableInTouchMode(needMarquee);
-                    if (needMarquee) tv.setMarqueeRepeatLimit(-1);
-                } finally {
-                    sReentry.set(Boolean.FALSE);
-                }
+            sReentry.set(Boolean.TRUE);
+            try {
+                tv.setHorizontallyScrolling(needMarquee);
+                tv.setEllipsize(needMarquee ? TextUtils.TruncateAt.MARQUEE : null);
+                tv.setSelected(needMarquee);
+                tv.setFocusable(needMarquee);
+                tv.setFocusableInTouchMode(needMarquee);
+                if (needMarquee) tv.setMarqueeRepeatLimit(-1);
+            } finally {
+                sReentry.set(Boolean.FALSE);
             }
         };
         tv.post(task);
@@ -2387,18 +1812,8 @@ public class SystemUiHook {
         sIslandBindDepth.set(depth - 1);
     }
 
-    private static boolean isInIslandBind() {
-        Integer depth = sIslandBindDepth.get();
-        return depth != null && depth > 0;
-    }
-
-    private static boolean isInOurIslandBind() {
-        return isInIslandBind() && Boolean.TRUE.equals(sCurrentBindOwned.get());
-    }
-
     private boolean isOwnedStatusBarNotification(Object sbnObj) {
-        if (!(sbnObj instanceof StatusBarNotification)) return false;
-        StatusBarNotification sbn = (StatusBarNotification) sbnObj;
+        if (!(sbnObj instanceof StatusBarNotification sbn)) return false;
         if (EXTRA_OWNER_VALUE.equals(sbn.getPackageName())) return true;
         Notification n = sbn.getNotification();
         return n != null && n.extras != null
@@ -2426,54 +1841,33 @@ public class SystemUiHook {
         }
     }
 
-    private static boolean isHolderOwned(Object holder) {
-        return holder != null && Boolean.TRUE.equals(sHolderOwned.get(holder));
+    private static boolean isHolderUnowned(Object holder) {
+        return holder == null || !Boolean.TRUE.equals(sHolderOwned.get(holder));
     }
 
     private static String safeIdName(View view, int id) {
         try {
             return view.getResources().getResourceEntryName(id);
-        } catch (Throwable ignore) {
+        } catch (android.content.res.Resources.NotFoundException ignored) {
+            // 宿主生成的 View ID 不一定对应资源；探测失败正常回退为空名称。
+            return "";
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
             return "";
         }
     }
 
-    private static View asView(Object obj) {
-        return obj instanceof View ? (View) obj : null;
-    }
-
     private static Object getFieldValue(Object target, String fieldName) {
+        if (target == null) return null;
         try {
             Field field = findField(target.getClass(), fieldName);
             if (field == null) return null;
             field.setAccessible(true);
             return field.get(target);
-        } catch (Throwable ignore) {
+        } catch (Throwable failure) {
+            swallowOptionalHookFailure(failure);
             return null;
         }
-    }
-
-    private static Object findFieldByTypeName(Object target, String typeNamePart) {
-        if (target == null || TextUtils.isEmpty(typeNamePart)) return null;
-        Class<?> cur = target.getClass();
-        while (cur != null) {
-            try {
-                Field[] fields = cur.getDeclaredFields();
-                for (Field f : fields) {
-                    if (f == null) continue;
-                    Class<?> ft = f.getType();
-                    if (ft == null) continue;
-                    String tn = ft.getName();
-                    if (TextUtils.isEmpty(tn) || !tn.contains(typeNamePart)) continue;
-                    f.setAccessible(true);
-                    Object v = f.get(target);
-                    if (v != null) return v;
-                }
-            } catch (Throwable ignore) {
-            }
-            cur = cur.getSuperclass();
-        }
-        return null;
     }
 
     private static Field findField(Class<?> cls, String name) {
@@ -2488,13 +1882,4 @@ public class SystemUiHook {
         return null;
     }
 
-    private static final class CachedTexts {
-        final String left;
-        final String right;
-
-        CachedTexts(String left, String right) {
-            this.left = left == null ? "" : left;
-            this.right = right == null ? "" : right;
-        }
-    }
 }

@@ -1,4 +1,4 @@
-package com.xiaoai.islandnotify;
+package com.xiaoai.islandnotify.hook;
 
 import android.app.Application;
 import android.content.BroadcastReceiver;
@@ -13,6 +13,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.xiaoai.islandnotify.CourseScheduleParser;
 import com.xiaoai.islandnotify.modernhook.XC_MethodHook;
 import com.xiaoai.islandnotify.modernhook.XposedBridge;
 
@@ -44,7 +45,7 @@ public class DeskClockHook {
     // Xposed 入口
     // ─────────────────────────────────────────────────────────────────────────
 
-    public void handleLoadPackage(String packageName, ClassLoader classLoader) throws Throwable {
+    public void handleLoadPackage(String packageName, ClassLoader classLoader) {
         if (!DESKCLOCK_PKG.equals(packageName)) return;
 
         // 在 deskclock Application 启动时注册广播接收器
@@ -250,7 +251,7 @@ public class DeskClockHook {
             setField(alarm, "alert", alertUri);
 
             // DaysOfWeek：coded = 0 → 不重复（仅一次）
-            Object daysOfWeek = getField(alarm, "daysOfWeek");
+            Object daysOfWeek = getDaysOfWeek(alarm);
             if (daysOfWeek != null) {
                 // 不同版本字段名为 "coded" 或 "mDays"
                 if (!setField(daysOfWeek, "coded", 0)) setField(daysOfWeek, "mDays", 0);
@@ -310,11 +311,10 @@ public class DeskClockHook {
                     base, null, null, null, null);
             if (c == null) return -1;
             long maxId = -1;
-            StringBuilder dbgCols = null;
+            StringBuilder dbgCols = new StringBuilder();
             try {
                 if (c.getColumnCount() > 0 && !c.moveToFirst()) return -1;
                 // 记录一次列名用于诊断
-                dbgCols = new StringBuilder();
                 for (int ci = 0; ci < c.getColumnCount(); ci++) {
                     if (ci > 0) dbgCols.append(",");
                     dbgCols.append(c.getColumnName(ci));
@@ -331,7 +331,7 @@ public class DeskClockHook {
                     if (h == hour && m == minute && rowId > maxId) maxId = rowId;
                 } while (c.moveToNext());
             } finally { c.close(); }
-            if (dbgCols != null) XposedBridge.log(TAG + ": CP columns=[" + dbgCols + "] found _id=" + maxId);
+            XposedBridge.log(TAG + ": CP columns=[" + dbgCols + "] found _id=" + maxId);
             return maxId;
         } catch (Throwable e) {
             XposedBridge.log(TAG + ": findAlarmIdByTime 失败 → " + e);
@@ -434,7 +434,7 @@ public class DeskClockHook {
         String stored = ctx.getSharedPreferences(SP_WAKEUP, Context.MODE_PRIVATE)
                            .getString(KEY_ALARM_IDS, "");
         List<Long> ids = new ArrayList<>();
-        if (stored == null || stored.isEmpty()) return ids;
+        if (stored.isEmpty()) return ids;
         for (String part : stored.split(",")) {
             try { ids.add(Long.parseLong(part.trim())); }
             catch (NumberFormatException ignored) {}
@@ -461,9 +461,9 @@ public class DeskClockHook {
         }
     }
 
-    /** 获取对象字段值（向父类递归查找），失败返回 null。 */
-    private Object getField(Object obj, String name) {
-        Field f = findField(obj.getClass(), name);
+    /** 获取重复日配置（向父类递归查找），失败返回 null。 */
+    private Object getDaysOfWeek(Object obj) {
+        Field f = findField(obj.getClass(), "daysOfWeek");
         if (f == null) return null;
         try {
             f.setAccessible(true);

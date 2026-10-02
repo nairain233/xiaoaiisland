@@ -64,9 +64,6 @@ public class MainActivity extends ComponentActivity {
     private static final String[] CUSTOM_SUFFIXES = ConfigDefaults.STAGE_SUFFIXES;
 
     private volatile XposedService mXposedService;
-    private volatile SharedPreferences mRemotePrefs;
-    private volatile SharedPreferences mRemoteHolidayPrefs;
-    private volatile boolean mScopeRequested = false;
     private ActivityResultLauncher<String> mCreateConfigBackupLauncher;
     private ActivityResultLauncher<String[]> mOpenConfigBackupLauncher;
     private String mPendingExportBackupJson;
@@ -111,7 +108,6 @@ public class MainActivity extends ComponentActivity {
     private SharedPreferences getConfigPrefs() {
         SharedPreferences remote = fetchRemotePrefs(PREFS_NAME);
         if (remote != null) {
-            mRemotePrefs = remote;
             return remote;
         }
         return PrefsAccess.resolve(null);
@@ -121,18 +117,17 @@ public class MainActivity extends ComponentActivity {
         return PrefsAccess.edit(getConfigPrefs());
     }
 
-    private int readConfigInt(String key, int defaultValue) {
-        return PrefsAccess.readConfigInt(getConfigPrefs(), key, defaultValue);
+    private int readConfigInt(String key) {
+        return PrefsAccess.readConfigInt(getConfigPrefs(), key, ConfigDefaults.MINUTES_OFFSET);
     }
 
-    private boolean readConfigBool(String key, boolean defaultValue) {
-        return PrefsAccess.readConfigBool(getConfigPrefs(), key, defaultValue);
+    private boolean readConfigBool(String key) {
+        return PrefsAccess.readConfigBool(getConfigPrefs(), key, ConfigDefaults.SWITCH_DISABLED);
     }
 
     private SharedPreferences getHolidayPrefs() {
         SharedPreferences remote = fetchRemotePrefs(HolidayManager.PREFS_HOLIDAY);
         if (remote != null) {
-            mRemoteHolidayPrefs = remote;
             return remote;
         }
         return PrefsAccess.resolve(null);
@@ -169,14 +164,6 @@ public class MainActivity extends ComponentActivity {
 
     SharedPreferences.Editor uiEditConfigPrefs() {
         return editConfigPrefs();
-    }
-
-    SharedPreferences uiHolidayPrefs() {
-        return getHolidayPrefs();
-    }
-
-    SharedPreferences.Editor uiEditHolidayPrefs() {
-        return editHolidayPrefs();
     }
 
     void uiSyncHolidayToHook(int year) {
@@ -310,6 +297,8 @@ public class MainActivity extends ComponentActivity {
         return legacy;
     }
 
+    // 提示状态接口保留双向写入能力，当前调用值不应改变接口语义。
+    @SuppressWarnings("SameParameterValue")
     void uiSetHintDismissed(String key, boolean dismissed) {
         getSharedPreferences(PREFS_UI_NAME, Context.MODE_PRIVATE)
                 .edit()
@@ -317,6 +306,8 @@ public class MainActivity extends ComponentActivity {
                 .apply();
     }
 
+    // 保留转义以明确既有回退文本的码点。
+    @SuppressWarnings("UnnecessaryUnicodeEscape")
     String uiReadAppVersionName() {
         try {
             return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -382,10 +373,7 @@ public class MainActivity extends ComponentActivity {
         }
         mXposedService = service;
         if (service == null) {
-            mRemotePrefs = null;
-            mRemoteHolidayPrefs = null;
             HolidayManager.clearRemotePrefs();
-            mScopeRequested = false;
             return;
         }
         initRemotePrefsBridgeRemoteOnly(service);
@@ -413,7 +401,6 @@ public class MainActivity extends ComponentActivity {
     private void initRemotePrefsBridgeRemoteOnly(XposedService service) {
         try {
             SharedPreferences remote = service.getRemotePreferences(PREFS_NAME);
-            mRemotePrefs = remote;
 
             SharedPreferences local = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             migrateLocalToRemoteIfNeeded(remote, local, true);
@@ -422,7 +409,6 @@ public class MainActivity extends ComponentActivity {
             clearLocalPrefs(PREFS_NAME);
 
             SharedPreferences remoteHoliday = service.getRemotePreferences(HolidayManager.PREFS_HOLIDAY);
-            mRemoteHolidayPrefs = remoteHoliday;
             SharedPreferences localHoliday = getSharedPreferences(HolidayManager.PREFS_HOLIDAY, Context.MODE_PRIVATE);
             migrateLocalToRemoteIfNeeded(remoteHoliday, localHoliday, false);
             clearLocalPrefs(HolidayManager.PREFS_HOLIDAY);
@@ -448,7 +434,7 @@ public class MainActivity extends ComponentActivity {
                 String key = entry.getKey();
                 if (key == null || !key.startsWith(HINT_KEY_PREFIX)) continue;
                 Object value = entry.getValue();
-                if (!ui.contains(key) && value instanceof Boolean && (Boolean) value) {
+                if (!ui.contains(key) && value instanceof Boolean dismissed && dismissed) {
                     uiEd.putBoolean(key, true);
                     uiChanged = true;
                 }
@@ -502,8 +488,10 @@ public class MainActivity extends ComponentActivity {
         }
     }
 
-    private boolean migrateLegacyActiveTimerSwitch(SharedPreferences sp, SharedPreferences.Editor ed) {
-        if (!sp.contains(KEY_ACTIVE_COUNTDOWN_TO_END)) return false;
+    // 保留旧配置字符串及模板占位符的显式码点，确保迁移匹配与写入保持一致。
+    @SuppressWarnings("UnnecessaryUnicodeEscape")
+    private void migrateLegacyActiveTimerSwitch(SharedPreferences sp, SharedPreferences.Editor ed) {
+        if (!sp.contains(KEY_ACTIVE_COUNTDOWN_TO_END)) return;
         boolean oldCountdown = sp.getBoolean(KEY_ACTIVE_COUNTDOWN_TO_END, false);
         String keyHintContentActive = "tpl_hint_content_active";
         String keyHintTitleActive = "tpl_hint_title_active";
@@ -518,9 +506,10 @@ public class MainActivity extends ComponentActivity {
                     : "{\u6b63\u8ba1\u65f6}");
         }
         ed.remove(KEY_ACTIVE_COUNTDOWN_TO_END);
-        return true;
     }
 
+    // 兼容旧模板的匹配值，保留转义以明确占位符与文本的码点。
+    @SuppressWarnings("UnnecessaryUnicodeEscape")
     private boolean migrateConfigV2Once(SharedPreferences sp, SharedPreferences.Editor ed) {
         if (sp.getBoolean(KEY_MIGRATION_V2_DONE, false)) return false;
         String keyHintTitleActive = "tpl_hint_title_active";
@@ -541,6 +530,8 @@ public class MainActivity extends ComponentActivity {
         return value == null ? "" : value;
     }
 
+    // 保留既有作用域提示文本的显式码点，运行时文本保持原样。
+    @SuppressWarnings("UnnecessaryUnicodeEscape")
     private void requestMissingScopeIfNeeded(XposedService service) {
         try {
             List<String> required = new ArrayList<>();
@@ -619,10 +610,14 @@ public class MainActivity extends ComponentActivity {
         requestComposeRefresh();
     }
 
+    // 测试入口的时间偏移保持可配置，当前调用值不应改变接口语义。
+    @SuppressWarnings("SameParameterValue")
     void uiSendTestBroadcastToTarget(long startOffsetMs, String courseNameInput, String classroomInput) {
         sendTestBroadcastInternal(startOffsetMs, courseNameInput, classroomInput);
     }
 
+    // 保留测试默认值的显式码点，避免改写既有字符串。
+    @SuppressWarnings("UnnecessaryUnicodeEscape")
     private void sendTestBroadcastInternal(long startOffsetMs, String courseNameInput, String classroomInput) {
         String courseName = courseNameInput == null ? "" : courseNameInput.trim();
         String classroom = classroomInput == null ? "" : classroomInput.trim();
@@ -650,14 +645,14 @@ public class MainActivity extends ComponentActivity {
                 cal.get(java.util.Calendar.MINUTE)
         );
 
-        boolean muteEnabled = readConfigBool("mute_enabled", ConfigDefaults.SWITCH_DISABLED);
-        int muteBefore = readConfigInt("mute_mins_before", ConfigDefaults.MINUTES_OFFSET);
-        boolean unmuteEnabled = readConfigBool("unmute_enabled", ConfigDefaults.SWITCH_DISABLED);
-        int unmuteAfter = readConfigInt("unmute_mins_after", ConfigDefaults.MINUTES_OFFSET);
-        boolean dndEnabled = readConfigBool("dnd_enabled", ConfigDefaults.SWITCH_DISABLED);
-        int dndBefore = readConfigInt("dnd_mins_before", ConfigDefaults.MINUTES_OFFSET);
-        boolean unDndEnabled = readConfigBool("undnd_enabled", ConfigDefaults.SWITCH_DISABLED);
-        int unDndAfter = readConfigInt("undnd_mins_after", ConfigDefaults.MINUTES_OFFSET);
+        boolean muteEnabled = readConfigBool("mute_enabled");
+        int muteBefore = readConfigInt("mute_mins_before");
+        boolean unmuteEnabled = readConfigBool("unmute_enabled");
+        int unmuteAfter = readConfigInt("unmute_mins_after");
+        boolean dndEnabled = readConfigBool("dnd_enabled");
+        int dndBefore = readConfigInt("dnd_mins_before");
+        boolean unDndEnabled = readConfigBool("undnd_enabled");
+        int unDndAfter = readConfigInt("undnd_mins_after");
 
         Intent intent = new Intent("com.xiaoai.islandnotify.ACTION_TEST_NOTIFY");
         intent.setPackage(TARGET_VOICEASSIST);
@@ -681,7 +676,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void syncHolidayToHook(int year) {
-        List<HolidayManager.HolidayEntry> entries = HolidayManager.loadEntries(this, year);
+        List<HolidayManager.HolidayEntry> entries = HolidayManager.loadEntries(year);
         String json = HolidayManager.entriesToJson(entries);
         editHolidayPrefs().putString("list_" + year, json).apply();
     }
@@ -799,10 +794,10 @@ public class MainActivity extends ComponentActivity {
         if (prefs == null) throw new IllegalArgumentException("配置文件缺少 prefs");
 
         int count = 0;
-        count += applyJsonToSharedPrefs(getConfigPrefs(), prefs.optJSONObject(PREFS_TYPE_CONFIG), true);
-        count += applyJsonToSharedPrefs(getHolidayPrefs(), prefs.optJSONObject(PREFS_TYPE_HOLIDAY), true);
+        count += applyJsonToSharedPrefs(getConfigPrefs(), prefs.optJSONObject(PREFS_TYPE_CONFIG));
+        count += applyJsonToSharedPrefs(getHolidayPrefs(), prefs.optJSONObject(PREFS_TYPE_HOLIDAY));
         count += applyJsonToSharedPrefs(getSharedPreferences(PREFS_UI_NAME, Context.MODE_PRIVATE),
-                prefs.optJSONObject(PREFS_TYPE_UI), true);
+                prefs.optJSONObject(PREFS_TYPE_UI));
         return count;
     }
 
@@ -831,10 +826,9 @@ public class MainActivity extends ComponentActivity {
             } else if (value instanceof Boolean) {
                 item.put("type", "boolean");
                 item.put("value", (Boolean) value);
-            } else if (value instanceof Set) {
+            } else if (value instanceof Set<?> rawSet) {
                 item.put("type", "string_set");
                 JSONArray arr = new JSONArray();
-                Set<?> rawSet = (Set<?>) value;
                 for (Object o : rawSet) {
                     if (o != null) arr.put(String.valueOf(o));
                 }
@@ -847,10 +841,10 @@ public class MainActivity extends ComponentActivity {
         return obj;
     }
 
-    private int applyJsonToSharedPrefs(SharedPreferences target, JSONObject data, boolean clearBefore) {
+    private int applyJsonToSharedPrefs(SharedPreferences target, JSONObject data) {
         if (target == null) return 0;
         SharedPreferences.Editor ed = target.edit();
-        if (clearBefore) ed.clear();
+        ed.clear();
         int count = 0;
         if (data != null) {
             JSONArray names = data.names();
@@ -878,8 +872,7 @@ public class MainActivity extends ComponentActivity {
                     } else if ("boolean".equals(type)) {
                         ed.putBoolean(key, item.optBoolean("value", false));
                         count++;
-                    } else if ("string_set".equals(type) && value instanceof JSONArray) {
-                        JSONArray arr = (JSONArray) value;
+                    } else if ("string_set".equals(type) && value instanceof JSONArray arr) {
                         Set<String> set = new HashSet<>();
                         for (int j = 0; j < arr.length(); j++) {
                             String s = arr.optString(j, null);

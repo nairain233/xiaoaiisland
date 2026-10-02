@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -2223,88 +2224,46 @@ private fun HolidayTab(
         }
 
         item(key = "节假日") {
-            SettingsSection(
+            HolidayEntriesSection(
                 title = "节假日",
-            ) {
-                if (state.holidayEntries.isEmpty()) {
-                    Text(
-                        text = "暂无节假日数据",
-                        style = MiuixTheme.textStyles.body2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.6f),
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                entries = state.holidayEntries,
+                addSummary = "添加节假日日期或区间",
+                onEdit = { entry ->
+                    holidayEditEntry = entry
+                    holidayDraft = HolidayDraft(
+                        date = entry.date,
+                        endDate = entry.endDate ?: "",
+                        name = entry.name,
                     )
-                } else {
-                    state.holidayEntries.forEach { entry ->
-                        HolidayRow(
-                            entry = entry,
-                            onEdit = {
-                                holidayEditEntry = entry
-                                holidayDraft = HolidayDraft(
-                                    date = entry.date,
-                                    endDate = entry.endDate ?: "",
-                                    name = entry.name,
-                                )
-                            },
-                            onDelete = {
-                                pendingDeleteHoliday = entry
-                            },
-                        )
-
-                    }
-                }
-
-                ArrowPreference(
-                    title = "新增节假日",
-                    summary = "添加节假日日期或区间",
-                    onClick = {
-                        holidayEditEntry = null
-                        holidayDraft = HolidayDraft(date = "${state.year}-01-01")
-                    },
-                )
-            }
+                },
+                onDelete = { pendingDeleteHoliday = it },
+                onAdd = {
+                    holidayEditEntry = null
+                    holidayDraft = HolidayDraft(date = "${state.year}-01-01")
+                },
+            )
         }
 
         item(key = "调休工作日") {
-            SettingsSection(
+            HolidayEntriesSection(
                 title = "调休工作日",
-            ) {
-                if (state.workswapEntries.isEmpty()) {
-                    Text(
-                        text = "暂无调休工作日数据",
-                        style = MiuixTheme.textStyles.body2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(16.dp),
+                entries = state.workswapEntries,
+                addSummary = "添加调休上班日与跟随周次",
+                onEdit = { entry ->
+                    workswapEditEntry = entry
+                    workswapDraft = WorkSwapDraft(
+                        date = entry.date,
+                        name = entry.name,
+                        followWeek = if (entry.followWeek > 0) entry.followWeek else 1,
+                        followWeekday = if (entry.followWeekday > 0) entry.followWeekday else 1,
                     )
-                } else {
-                    state.workswapEntries.forEach { entry ->
-                        WorkswapRow(
-                            entry = entry,
-                            onEdit = {
-                                workswapEditEntry = entry
-                                workswapDraft = WorkSwapDraft(
-                                    date = entry.date,
-                                    name = entry.name,
-                                    followWeek = if (entry.followWeek > 0) entry.followWeek else 1,
-                                    followWeekday = if (entry.followWeekday > 0) entry.followWeekday else 1,
-                                )
-                            },
-                            onDelete = {
-                                pendingDeleteWorkswap = entry
-                            },
-                        )
-
-                    }
-                }
-
-                ArrowPreference(
-                    title = "新增调休工作日",
-                    summary = "添加调休上班日与跟随周次",
-                    onClick = {
-                        workswapEditEntry = null
-                        workswapDraft = WorkSwapDraft(date = "${state.year}-01-01")
-                    },
-                )
-            }
+                },
+                onDelete = { pendingDeleteWorkswap = it },
+                onAdd = {
+                    workswapEditEntry = null
+                    workswapDraft = WorkSwapDraft(date = "${state.year}-01-01")
+                },
+            )
         }
 
     }
@@ -2544,13 +2503,60 @@ private fun fetchHolidayEntries(year: Int): FetchHolidayResult {
 }
 
 @Composable
+internal fun HolidayEntriesSection(
+    title: String,
+    entries: List<HolidayManager.HolidayEntry>,
+    addSummary: String,
+    onEdit: (HolidayManager.HolidayEntry) -> Unit,
+    onDelete: (HolidayManager.HolidayEntry) -> Unit,
+    onAdd: () -> Unit,
+) {
+    SettingsSection(title = title) {
+        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+            if (entries.isEmpty()) {
+                Text(
+                    text = "暂无${title}数据",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                entries.forEachIndexed { index, entry ->
+                    if (entry.type == HolidayManager.TYPE_HOLIDAY) {
+                        HolidayRow(entry, onEdit = { onEdit(entry) }, onDelete = { onDelete(entry) })
+                    } else {
+                        WorkswapRow(entry, onEdit = { onEdit(entry) }, onDelete = { onDelete(entry) })
+                    }
+                    if (index != entries.lastIndex) Spacer(Modifier.height(12.dp))
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            val addTitle = "新增$title"
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .clickable(role = Role.Button, onClickLabel = addTitle, onClick = onAdd)
+                    .padding(vertical = 6.dp),
+            ) {
+                Text(addTitle, style = MiuixTheme.textStyles.main, fontWeight = FontWeight.Bold)
+                Text(
+                    text = addSummary,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+        }
+    }
+}
+
+@Composable
 private fun HolidayRow(
     entry: HolidayManager.HolidayEntry,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val dateLabel = formatDateRange(entry.date, entry.endDate)
-    EditableEntry(onEdit = onEdit, onDelete = onDelete) {
+    CompactEditableEntry(onEdit = onEdit, onDelete = onDelete) {
         Text(
             "$dateLabel  ${entry.name}",
             style = MiuixTheme.textStyles.main,
@@ -2571,7 +2577,7 @@ private fun WorkswapRow(
     onDelete: () -> Unit,
 ) {
     val dateLabel = formatDateRange(entry.date, entry.endDate)
-    EditableEntry(onEdit = onEdit, onDelete = onDelete) {
+    CompactEditableEntry(onEdit = onEdit, onDelete = onDelete) {
         Text(
             "$dateLabel  ${entry.name}",
             style = MiuixTheme.textStyles.main,

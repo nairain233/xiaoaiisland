@@ -77,6 +77,8 @@ import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Close
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
@@ -377,6 +379,38 @@ internal fun EditableEntry(
 }
 
 @Composable
+internal fun CompactEditableEntry(
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp), content = content)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            IconButton(modifier = Modifier.size(48.dp), onClick = onEdit) {
+                Icon(
+                    imageVector = MiuixIcons.Edit,
+                    contentDescription = "编辑",
+                    modifier = Modifier.size(24.dp),
+                    tint = MiuixTheme.colorScheme.onSurface,
+                )
+            }
+            IconButton(modifier = Modifier.size(48.dp), onClick = onDelete) {
+                Icon(
+                    imageVector = MiuixIcons.Delete,
+                    contentDescription = "删除",
+                    modifier = Modifier.size(24.dp),
+                    tint = MiuixTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun ConfirmationDialog(
     show: Boolean,
     title: String,
@@ -425,18 +459,28 @@ internal fun InformationCard(text: String, onClose: (() -> Unit)? = null) {
     ) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 60.dp)
-                .padding(
-                    start = 16.dp,
-                    end = if (onClose == null) 16.dp else 8.dp,
-                    top = 12.dp,
-                    bottom = 12.dp
-                ),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text, modifier = Modifier.weight(1f), color = foreground)
+            // 沿用旧版提示的小字号与紧凑关闭按钮，长文本自然撑开卡片。
+            Text(
+                text = text,
+                modifier = Modifier.weight(1f),
+                style = MiuixTheme.textStyles.body2,
+                fontWeight = FontWeight.Medium,
+                color = foreground,
+            )
             if (onClose != null) {
-                IconButton(modifier = Modifier.size(48.dp), onClick = onClose) {
-                    Icon(MiuixIcons.Basic.Close, contentDescription = "关闭提示", tint = foreground)
+                IconButton(
+                    modifier = Modifier.padding(start = 16.dp).size(16.dp),
+                    onClick = onClose,
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Basic.Close,
+                        contentDescription = "关闭提示",
+                        modifier = Modifier.size(11.dp),
+                        tint = foreground,
+                    )
                 }
             }
         }

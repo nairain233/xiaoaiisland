@@ -1828,14 +1828,18 @@ private fun WakeRuleList(
     val safeMax = maxOf(safeMin, maxSec)
     var editingIndex by remember { mutableIntStateOf(-1) }
     var pendingDeleteIndex by remember { mutableIntStateOf(-1) }
-    rules.forEachIndexed { index, rule ->
-        WakeRuleRow(
-            index = index,
-            rule = rule,
-            onEdit = { editingIndex = index },
-            onDelete = { pendingDeleteIndex = index },
-        )
-
+    if (rules.isNotEmpty()) {
+        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+            rules.forEachIndexed { index, rule ->
+                WakeRuleRow(
+                    index = index,
+                    rule = rule,
+                    onEdit = { editingIndex = index },
+                    onDelete = { pendingDeleteIndex = index },
+                )
+                if (index != rules.lastIndex) Spacer(Modifier.height(12.dp))
+            }
+        }
     }
     ArrowPreference(
         title = "新增规则",
@@ -1974,7 +1978,7 @@ private fun WakeRuleRow(
     val hour = rule.hour.toIntOrNull()?.coerceIn(0, 23) ?: 0
     val minute = rule.minute.toIntOrNull()?.coerceIn(0, 59) ?: 0
     val sec = rule.sec.toIntOrNull()?.coerceAtLeast(1) ?: 1
-    EditableEntry(onEdit = onEdit, onDelete = onDelete) {
+    CompactEditableEntry(onEdit = onEdit, onDelete = onDelete) {
         Text(
             "规则 ${index + 1}",
             style = MiuixTheme.textStyles.main,

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 保留迁移前提示的固定蓝色和背景透明度，不跟随 Monet 取色。 -->
+    <color name="hint_background">#1A3482FF</color>
+    <color name="hint_foreground">#FF3482FF</color>
+</resources>

@@ -18,15 +18,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -59,7 +56,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.ColorSpace
 import top.yukonga.miuix.kmp.basic.NumberPicker
@@ -127,7 +123,8 @@ private data class WorkSwapDraft(
 )
 
 private const val MAX_MINUTE_VALUE = 9999
-private const val RELEASES_URL = "https://github.com/Xposed-Modules-Repo/com.xiaoai.islandnotify/releases"
+private const val RELEASES_URL =
+    "https://github.com/Xposed-Modules-Repo/com.xiaoai.islandnotify/releases"
 
 @Composable
 private fun MainComposeApp(
@@ -156,11 +153,13 @@ private fun MainComposeApp(
     }
 
     MiuixAppShell(themeController) { route, onOpen, onBack ->
-        when (route) {
-            AppRoute.Home -> RouteScaffold(
-                title = "课程表超级岛", canBack = false, onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                HomeEntryPage(
+        RouteScaffold(
+            title = route.title,
+            canBack = route != AppRoute.Home,
+            onBack = onBack
+        ) { pageModifier, pagePadding ->
+            when (route) {
+                AppRoute.Home -> HomeEntryPage(
                     modifier = pageModifier,
                     pagePadding = pagePadding,
                     state = settingsState,
@@ -169,111 +168,67 @@ private fun MainComposeApp(
                     onOpen = onOpen,
                     onResetConfirmed = {
                         val count = activity.uiResetAllConfigToDefaults()
-                        Toast.makeText(activity, "已恢复默认配置：$count 项", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(activity, "已恢复默认配置：$count 项", Toast.LENGTH_SHORT)
+                            .show()
                         activity.requestComposeRefresh()
                     },
                     onExportConfig = { activity.uiExportAllConfig() },
                     onImportConfig = { activity.uiImportAllConfig() },
                 )
-            }
 
-            is AppRoute.TestNotify -> RouteScaffold(
-                title = "测试通知",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                SingleCardPage(modifier = pageModifier, pagePadding = pagePadding) {
-                    TestNotifyCard(activity = activity, state = settingsState)
-                }
-            }
-            is AppRoute.StatusCustom -> RouteScaffold(
-                title = "状态栏岛自定义",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                StatusCustomPage(
-                    activity = activity,
-                    state = settingsState,
-                    modifier = pageModifier,
-                    pagePadding = pagePadding,
+                AppRoute.TestNotify -> TestNotifyPage(
+                    activity,
+                    settingsState,
+                    pageModifier,
+                    pagePadding
                 )
-            }
-            is AppRoute.ExpandedCustom -> RouteScaffold(
-                title = "展开态自定义",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                ExpandedCustomPage(
-                    activity = activity,
-                    state = settingsState,
-                    modifier = pageModifier,
-                    pagePadding = pagePadding,
+
+                AppRoute.StatusCustom -> StatusCustomPage(
+                    activity,
+                    settingsState,
+                    pageModifier,
+                    pagePadding
                 )
-            }
-            is AppRoute.Timeout -> RouteScaffold(
-                title = "消失时间",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                SingleCardPage(modifier = pageModifier, pagePadding = pagePadding) {
-                    TimeoutCard(activity = activity, state = settingsState)
-                }
-            }
-            is AppRoute.Reminder -> RouteScaffold(
-                title = "课前提醒",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                SingleCardPage(modifier = pageModifier, pagePadding = pagePadding) {
-                    ReminderCard(activity = activity, state = settingsState)
-                }
-            }
-            is AppRoute.Mute -> RouteScaffold(
-                title = "上课免打扰",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                SingleCardPage(modifier = pageModifier, pagePadding = pagePadding) {
-                    MuteCard(activity = activity, state = settingsState)
-                }
-            }
-            is AppRoute.Wakeup -> RouteScaffold(
-                title = "自动叫醒",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                SingleCardPage(modifier = pageModifier, pagePadding = pagePadding) {
-                    WakeupCard(activity = activity, state = settingsState)
-                }
-            }
-            is AppRoute.Holiday -> RouteScaffold(
-                title = "假期/调休",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                HolidayTab(
-                    activity = activity,
-                    state = holidayState,
-                    modifier = pageModifier,
-                    pagePadding = pagePadding,
+
+                AppRoute.ExpandedCustom -> ExpandedCustomPage(
+                    activity,
+                    settingsState,
+                    pageModifier,
+                    pagePadding
                 )
-            }
-            is AppRoute.About -> RouteScaffold(
-                title = "关于",
-                canBack = true,
-                onBack = onBack,
-            ) { pageModifier, pagePadding ->
-                AboutTab(
-                    activity = activity,
-                    state = aboutState,
-                    modifier = pageModifier,
-                    pagePadding = pagePadding,
+
+                AppRoute.Timeout -> TimeoutPage(activity, settingsState, pageModifier, pagePadding)
+                AppRoute.Reminder -> ReminderPage(
+                    activity,
+                    settingsState,
+                    pageModifier,
+                    pagePadding
                 )
+
+                AppRoute.Mute -> MutePage(activity, settingsState, pageModifier, pagePadding)
+                AppRoute.Wakeup -> WakeupPage(activity, settingsState, pageModifier, pagePadding)
+                AppRoute.Holiday -> HolidayTab(activity, holidayState, pageModifier, pagePadding)
+                AppRoute.About -> AboutTab(activity, aboutState, pageModifier, pagePadding)
+                AppRoute.Empty -> Unit
             }
-            AppRoute.Empty -> Unit
         }
     }
 }
+
+private val AppRoute.title: String
+    get() = when (this) {
+        AppRoute.Home -> "课程表超级岛"
+        AppRoute.TestNotify -> "测试通知"
+        AppRoute.StatusCustom -> "状态栏岛自定义"
+        AppRoute.ExpandedCustom -> "展开态自定义"
+        AppRoute.Timeout -> "消失时间"
+        AppRoute.Reminder -> "课前提醒"
+        AppRoute.Mute -> "上课免打扰"
+        AppRoute.Wakeup -> "自动叫醒"
+        AppRoute.Holiday -> "假期/调休"
+        AppRoute.About -> "关于"
+        AppRoute.Empty -> ""
+    }
 
 private class SettingsComposeState {
     var frameworkActive by mutableStateOf(false)
@@ -421,21 +376,30 @@ private class SettingsComposeState {
         wakeupMorningEnabled = PrefsAccess.readConfigBool(prefs, "wakeup_morning_enabled", false)
         wakeupMorningLastSec =
             PrefsAccess.readConfigInt(prefs, "wakeup_morning_last_sec", 4).toString()
-        wakeupAfternoonEnabled = PrefsAccess.readConfigBool(prefs, "wakeup_afternoon_enabled", false)
+        wakeupAfternoonEnabled =
+            PrefsAccess.readConfigBool(prefs, "wakeup_afternoon_enabled", false)
         wakeupAfternoonFirstSec =
             PrefsAccess.readConfigInt(prefs, "wakeup_afternoon_first_sec", 5).toString()
         wakeupMorningRules.clear()
-        wakeupMorningRules.addAll(parseWakeRules(PrefsAccess.readConfigString(
-            prefs,
-            "wakeup_morning_rules_json",
-            ConfigDefaults.WAKEUP_MORNING_RULES_JSON,
-        )))
+        wakeupMorningRules.addAll(
+            parseWakeRules(
+                PrefsAccess.readConfigString(
+                    prefs,
+                    "wakeup_morning_rules_json",
+                    ConfigDefaults.WAKEUP_MORNING_RULES_JSON,
+                )
+            )
+        )
         wakeupAfternoonRules.clear()
-        wakeupAfternoonRules.addAll(parseWakeRules(PrefsAccess.readConfigString(
-            prefs,
-            "wakeup_afternoon_rules_json",
-            ConfigDefaults.WAKEUP_AFTERNOON_RULES_JSON,
-        )))
+        wakeupAfternoonRules.addAll(
+            parseWakeRules(
+                PrefsAccess.readConfigString(
+                    prefs,
+                    "wakeup_afternoon_rules_json",
+                    ConfigDefaults.WAKEUP_AFTERNOON_RULES_JSON,
+                )
+            )
+        )
     }
 }
 
@@ -469,22 +433,6 @@ private class AboutComposeState {
 }
 
 @Composable
-private fun SingleCardPage(
-    modifier: Modifier = Modifier,
-    pagePadding: PaddingValues = PaddingValues(0.dp),
-    content: @Composable () -> Unit,
-) {
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = withExtraPadding(pagePadding, horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item { content() }
-        item { Spacer(modifier = Modifier.height(24.dp)) }
-    }
-}
-
-@Composable
 private fun HomeEntryPage(
     modifier: Modifier = Modifier,
     pagePadding: PaddingValues = PaddingValues(0.dp),
@@ -498,11 +446,7 @@ private fun HomeEntryPage(
 ) {
     var showResetDialog by remember { mutableStateOf(false) }
     var showConfigTransferDialog by remember { mutableStateOf(false) }
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = withExtraPadding(pagePadding, horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
         item {
             LspStatusCard(
                 active = state.frameworkActive,
@@ -578,7 +522,7 @@ private fun HomeEntryPage(
                 )
             }
         }
-        item { Spacer(modifier = Modifier.height(24.dp)) }
+
     }
 
     ConfirmationDialog(
@@ -668,137 +612,116 @@ private fun StatusCustomPage(
         editor.apply()
     }
 
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = withExtraPadding(pagePadding, horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
         item {
             InformationCard(
                 text = "可用变量：{课名} {开始} {结束} {教室} {节次} {教师} {倒计时} {正计时}",
             )
         }
-        item {
-            DismissibleHint(
-                activity = activity,
-                key = "hint_status_custom_timer_rule",
-                text = "状态栏岛仅岛B支持计时变量，计时变量需放在开头，可在后面拼接文本；上课前不支持{正计时}，下课后不支持{倒计时}。",
-            )
-        }
-        item {
-            DismissibleHint(
-                activity = activity,
-                key = "hint_status_custom_conflict",
-                text = "保存时会做同阶段计时冲突校验：保存状态栏岛时会将展开态主要小文本1/2对齐到状态栏岛B；保存展开态时会将状态栏岛B对齐到展开态。同阶段展开态与状态栏岛B只能保留一种计时类型（正计时或倒计时）。",
-            )
-        }
+        dismissibleHint(
+            hints = hints,
+            key = "hint_status_custom_timer_rule",
+            text = "状态栏岛仅岛B支持计时变量，计时变量需放在开头，可在后面拼接文本；上课前不支持{正计时}，下课后不支持{倒计时}。",
+        )
+        dismissibleHint(
+            hints = hints,
+            key = "hint_status_custom_conflict",
+            text = "保存时会做同阶段计时冲突校验：保存状态栏岛时会将展开态主要小文本1/2对齐到状态栏岛B；保存展开态时会将状态栏岛B对齐到展开态。同阶段展开态与状态栏岛B只能保留一种计时类型（正计时或倒计时）。",
+        )
         items(stageLabels.indices.toList()) { i ->
             val stage = state.stageStates[i]
             val label = stageLabels[i]
-            Column(modifier = Modifier.fillMaxWidth()) {
-                SettingsSection(
-                    title = label,
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                    ) {
-                        ArrowPreference(
-                            title = "岛A（左侧文字）",
-                            endActions = { PreferenceValue(stage.tplA.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$label - 岛A（左侧文字）",
-                                    initialValue = stage.tplA,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(tplA = it)
-                                        persistStatusConfig()
-                                    },
-                                )
+            SettingsSection(
+                title = label,
+            ) {
+                ArrowPreference(
+                    title = "岛A（左侧文字）",
+                    endActions = { PreferenceValue(stage.tplA.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$label - 岛A（左侧文字）",
+                            initialValue = stage.tplA,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(tplA = it)
+                                persistStatusConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "岛B（右侧文字）",
-                            endActions = { PreferenceValue(stage.tplB.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$label - 岛B（右侧文字）",
-                                    initialValue = stage.tplB,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(tplB = it)
-                                        persistStatusConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "岛B（右侧文字）",
+                    endActions = { PreferenceValue(stage.tplB.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$label - 岛B（右侧文字）",
+                            initialValue = stage.tplB,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(tplB = it)
+                                persistStatusConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "息屏显示",
-                            endActions = { PreferenceValue(stage.tplTicker.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$label - 息屏显示",
-                                    initialValue = stage.tplTicker,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(tplTicker = it)
-                                        persistStatusConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "息屏显示",
+                    endActions = { PreferenceValue(stage.tplTicker.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$label - 息屏显示",
+                            initialValue = stage.tplTicker,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(tplTicker = it)
+                                persistStatusConfig()
                             },
                         )
-                    }
-                }
+                    },
+                )
             }
         }
         item {
             SettingsSection {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                ) {
+                SwitchPreference(
+                    title = "岛A显示图标",
+                    checked = state.iconAEnabled,
+                    onCheckedChange = {
+                        state.iconAEnabled = it
+                        persistStatusConfig()
+                    },
+                )
+                GlowColorValuePreference(
+                    title = "文本颜色",
+                    argb = state.statusTextCustomColorArgb,
+                    onClick = { showTextColorDialog = true },
+                )
+                SwitchPreference(
+                    title = "发光效果",
+                    checked = state.outEffectStatusEnabled,
+                    onCheckedChange = {
+                        state.outEffectStatusEnabled = it
+                        persistStatusConfig()
+                    },
+                )
+                if (state.outEffectStatusEnabled) {
                     SwitchPreference(
-                        title = "岛A显示图标",
-                        checked = state.iconAEnabled,
+                        title = "发光自定义颜色",
+                        checked = state.outEffectStatusCustomColorEnabled,
                         onCheckedChange = {
-                            state.iconAEnabled = it
+                            state.outEffectStatusCustomColorEnabled = it
                             persistStatusConfig()
                         },
                     )
-                    GlowColorValuePreference(
-                        title = "文本颜色",
-                        argb = state.statusTextCustomColorArgb,
-                        onClick = { showTextColorDialog = true },
-                    )
-                    SwitchPreference(
-                        title = "发光效果",
-                        checked = state.outEffectStatusEnabled,
-                        onCheckedChange = {
-                            state.outEffectStatusEnabled = it
-                            persistStatusConfig()
-                        },
-                    )
-                    if (state.outEffectStatusEnabled) {
-                        SwitchPreference(
-                            title = "发光自定义颜色",
-                            checked = state.outEffectStatusCustomColorEnabled,
-                            onCheckedChange = {
-                                state.outEffectStatusCustomColorEnabled = it
-                                persistStatusConfig()
-                            },
+                    if (state.outEffectStatusCustomColorEnabled) {
+                        GlowColorValuePreference(
+                            title = "发光颜色",
+                            argb = state.outEffectStatusCustomColorArgb,
+                            onClick = { showGlowColorDialog = true },
                         )
-                        if (state.outEffectStatusCustomColorEnabled) {
-                            GlowColorValuePreference(
-                                title = "发光颜色",
-                                argb = state.outEffectStatusCustomColorArgb,
-                                onClick = { showGlowColorDialog = true },
-                            )
-                        }
                     }
                 }
             }
         }
-        item { Spacer(modifier = Modifier.height(24.dp)) }
+
     }
     editDialog?.let { spec ->
         EditValueDialog(spec = spec, onDismiss = { editDialog = null })
@@ -846,13 +769,34 @@ private fun ExpandedCustomPage(
         ConfigDefaults.STAGE_SUFFIXES.forEachIndexed { idx, suffix ->
             val stageItem = state.stageStates[idx]
             editor.putString("tpl_b$suffix", stageItem.tplB.trim())
-            editor.putString("${ConfigDefaults.EXPANDED_TPL_KEYS[0]}$suffix", stageItem.baseTitle.trim())
-            editor.putString("${ConfigDefaults.EXPANDED_TPL_KEYS[1]}$suffix", stageItem.hintTitle.trim())
-            editor.putString("${ConfigDefaults.EXPANDED_TPL_KEYS[2]}$suffix", stageItem.hintSubtitle.trim())
-            editor.putString("${ConfigDefaults.EXPANDED_TPL_KEYS[3]}$suffix", stageItem.hintContent.trim())
-            editor.putString("${ConfigDefaults.EXPANDED_TPL_KEYS[4]}$suffix", stageItem.hintSubcontent.trim())
-            editor.putString("${ConfigDefaults.EXPANDED_TPL_KEYS[5]}$suffix", stageItem.baseContent.trim())
-            editor.putString("${ConfigDefaults.EXPANDED_TPL_KEYS[6]}$suffix", stageItem.baseSubcontent.trim())
+            editor.putString(
+                "${ConfigDefaults.EXPANDED_TPL_KEYS[0]}$suffix",
+                stageItem.baseTitle.trim()
+            )
+            editor.putString(
+                "${ConfigDefaults.EXPANDED_TPL_KEYS[1]}$suffix",
+                stageItem.hintTitle.trim()
+            )
+            editor.putString(
+                "${ConfigDefaults.EXPANDED_TPL_KEYS[2]}$suffix",
+                stageItem.hintSubtitle.trim()
+            )
+            editor.putString(
+                "${ConfigDefaults.EXPANDED_TPL_KEYS[3]}$suffix",
+                stageItem.hintContent.trim()
+            )
+            editor.putString(
+                "${ConfigDefaults.EXPANDED_TPL_KEYS[4]}$suffix",
+                stageItem.hintSubcontent.trim()
+            )
+            editor.putString(
+                "${ConfigDefaults.EXPANDED_TPL_KEYS[5]}$suffix",
+                stageItem.baseContent.trim()
+            )
+            editor.putString(
+                "${ConfigDefaults.EXPANDED_TPL_KEYS[6]}$suffix",
+                stageItem.baseSubcontent.trim()
+            )
         }
         editor.putBoolean("out_effect_expand_enabled", state.outEffectExpandEnabled)
         editor.putBoolean(
@@ -866,180 +810,161 @@ private fun ExpandedCustomPage(
         editor.apply()
     }
 
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = withExtraPadding(pagePadding, horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
         item {
             InformationCard(
                 text = "可用变量：{课名} {开始} {结束} {教室} {节次} {教师} {倒计时} {正计时}",
             )
         }
-        item {
-            DismissibleHint(
-                activity = activity,
-                key = "hint_expanded_custom_timer_rule",
-                text = "上课前不支持{正计时}，下课后不支持{倒计时}。计时变量仅主要小文本1/2支持，且不可与其他字符串拼接。",
-            )
-        }
-        item {
-            DismissibleHint(
-                activity = activity,
-                key = "hint_expanded_custom_conflict",
-                text = "保存时会做同阶段计时冲突校验：保存状态栏岛时会将展开态主要小文本1/2对齐到状态栏岛B；保存展开态时会将状态栏岛B对齐到展开态。同阶段展开态与状态栏岛B只能保留一种计时类型（正计时或倒计时）。",
-            )
-        }
+        dismissibleHint(
+            hints = hints,
+            key = "hint_expanded_custom_timer_rule",
+            text = "上课前不支持{正计时}，下课后不支持{倒计时}。计时变量仅主要小文本1/2支持，且不可与其他字符串拼接。",
+        )
+        dismissibleHint(
+            hints = hints,
+            key = "hint_expanded_custom_conflict",
+            text = "保存时会做同阶段计时冲突校验：保存状态栏岛时会将展开态主要小文本1/2对齐到状态栏岛B；保存展开态时会将状态栏岛B对齐到展开态。同阶段展开态与状态栏岛B只能保留一种计时类型（正计时或倒计时）。",
+        )
         items(sectionTitles.indices.toList()) { i ->
             val stage = state.stageStates[i]
             val title = sectionTitles[i]
-            Column(modifier = Modifier.fillMaxWidth()) {
-                SettingsSection(
-                    title = title,
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                    ) {
-                        ArrowPreference(
-                            title = "主要标题",
-                            endActions = { PreferenceValue(stage.baseTitle.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$title - 主要标题",
-                                    initialValue = stage.baseTitle,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(baseTitle = it)
-                                        persistExpandedConfig()
-                                    },
-                                )
+            SettingsSection(
+                title = title,
+            ) {
+                ArrowPreference(
+                    title = "主要标题",
+                    endActions = { PreferenceValue(stage.baseTitle.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$title - 主要标题",
+                            initialValue = stage.baseTitle,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(baseTitle = it)
+                                persistExpandedConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "次要文本1",
-                            endActions = { PreferenceValue(stage.baseContent.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$title - 次要文本1",
-                                    initialValue = stage.baseContent,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(baseContent = it)
-                                        persistExpandedConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "次要文本1",
+                    endActions = { PreferenceValue(stage.baseContent.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$title - 次要文本1",
+                            initialValue = stage.baseContent,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(baseContent = it)
+                                persistExpandedConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "次要文本2",
-                            endActions = { PreferenceValue(stage.baseSubcontent.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$title - 次要文本2",
-                                    initialValue = stage.baseSubcontent,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(baseSubcontent = it)
-                                        persistExpandedConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "次要文本2",
+                    endActions = { PreferenceValue(stage.baseSubcontent.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$title - 次要文本2",
+                            initialValue = stage.baseSubcontent,
+                            onConfirm = {
+                                state.stageStates[i] =
+                                    state.stageStates[i].copy(baseSubcontent = it)
+                                persistExpandedConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "前置文本1",
-                            endActions = { PreferenceValue(stage.hintContent.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$title - 前置文本1",
-                                    initialValue = stage.hintContent,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(hintContent = it)
-                                        persistExpandedConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "前置文本1",
+                    endActions = { PreferenceValue(stage.hintContent.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$title - 前置文本1",
+                            initialValue = stage.hintContent,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(hintContent = it)
+                                persistExpandedConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "前置文本2",
-                            endActions = { PreferenceValue(stage.hintSubcontent.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$title - 前置文本2",
-                                    initialValue = stage.hintSubcontent,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(hintSubcontent = it)
-                                        persistExpandedConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "前置文本2",
+                    endActions = { PreferenceValue(stage.hintSubcontent.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$title - 前置文本2",
+                            initialValue = stage.hintSubcontent,
+                            onConfirm = {
+                                state.stageStates[i] =
+                                    state.stageStates[i].copy(hintSubcontent = it)
+                                persistExpandedConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "主要小文本1",
-                            endActions = { PreferenceValue(stage.hintTitle.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$title - 主要小文本1",
-                                    initialValue = stage.hintTitle,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(hintTitle = it)
-                                        persistExpandedConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "主要小文本1",
+                    endActions = { PreferenceValue(stage.hintTitle.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$title - 主要小文本1",
+                            initialValue = stage.hintTitle,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(hintTitle = it)
+                                persistExpandedConfig()
                             },
                         )
-                        ArrowPreference(
-                            title = "主要小文本2",
-                            endActions = { PreferenceValue(stage.hintSubtitle.ifBlank { "未设置" }) },
-                            onClick = {
-                                editDialog = EditDialogSpec(
-                                    title = "$title - 主要小文本2",
-                                    initialValue = stage.hintSubtitle,
-                                    onConfirm = {
-                                        state.stageStates[i] = state.stageStates[i].copy(hintSubtitle = it)
-                                        persistExpandedConfig()
-                                    },
-                                )
+                    },
+                )
+                ArrowPreference(
+                    title = "主要小文本2",
+                    endActions = { PreferenceValue(stage.hintSubtitle.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "$title - 主要小文本2",
+                            initialValue = stage.hintSubtitle,
+                            onConfirm = {
+                                state.stageStates[i] = state.stageStates[i].copy(hintSubtitle = it)
+                                persistExpandedConfig()
                             },
                         )
-                    }
-                }
+                    },
+                )
             }
         }
         item {
             SettingsSection {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                ) {
+                SwitchPreference(
+                    title = "发光效果",
+                    checked = state.outEffectExpandEnabled,
+                    onCheckedChange = {
+                        state.outEffectExpandEnabled = it
+                        persistExpandedConfig()
+                    },
+                )
+                if (state.outEffectExpandEnabled) {
                     SwitchPreference(
-                        title = "发光效果",
-                        checked = state.outEffectExpandEnabled,
+                        title = "发光自定义颜色",
+                        checked = state.outEffectExpandCustomColorEnabled,
                         onCheckedChange = {
-                            state.outEffectExpandEnabled = it
+                            state.outEffectExpandCustomColorEnabled = it
                             persistExpandedConfig()
                         },
                     )
-                    if (state.outEffectExpandEnabled) {
-                        SwitchPreference(
-                            title = "发光自定义颜色",
-                            checked = state.outEffectExpandCustomColorEnabled,
-                            onCheckedChange = {
-                                state.outEffectExpandCustomColorEnabled = it
-                                persistExpandedConfig()
-                            },
+                    if (state.outEffectExpandCustomColorEnabled) {
+                        GlowColorValuePreference(
+                            title = "发光颜色",
+                            argb = state.outEffectExpandCustomColorArgb,
+                            onClick = { showColorDialog = true },
                         )
-                        if (state.outEffectExpandCustomColorEnabled) {
-                            GlowColorValuePreference(
-                                title = "发光颜色",
-                                argb = state.outEffectExpandCustomColorArgb,
-                                onClick = { showColorDialog = true },
-                            )
-                        }
                     }
                 }
             }
         }
-        item { Spacer(modifier = Modifier.height(24.dp)) }
+
     }
     editDialog?.let { spec ->
         EditValueDialog(spec = spec, onDismiss = { editDialog = null })
@@ -1149,7 +1074,7 @@ private fun GlowColorPickerDialog(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(10.dp))
-        top.yukonga.miuix.kmp.basic.TextField(
+        TextField(
             value = hexInput,
             onValueChange = { value ->
                 val normalized = normalizeColorHexInput(value)
@@ -1166,73 +1091,70 @@ private fun GlowColorPickerDialog(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
         )
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onConfirm(pickedColor.toArgb()) },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onConfirm(pickedColor.toArgb()) },
+        )
     }
 }
 
 @Composable
-private fun TestNotifyCard(activity: MainActivity, state: SettingsComposeState) {
+private fun TestNotifyPage(
+    activity: MainActivity,
+    state: SettingsComposeState,
+    modifier: Modifier = Modifier,
+    pagePadding: PaddingValues = PaddingValues(0.dp),
+) {
     var editDialog by remember { mutableStateOf<EditDialogSpec?>(null) }
-    DismissibleHint(
-        activity = activity,
-        key = "hint_test_notify",
-        text = "发送一条模拟课程提醒，验证超级岛效果是否正常。如果未发送，请强制停止作用域和模块重试。如果测试通知正常但实际提醒失效，请在桌面或负一屏添加小爱课程表小组件。",
-    )
-    SettingsSection {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-        ) {
-            ArrowPreference(
-                title = "课程名称",
-                endActions = { PreferenceValue(state.courseName.ifBlank { "未设置" }) },
-                onClick = {
-                    editDialog = EditDialogSpec(
-                        title = "课程名称",
-                        initialValue = state.courseName,
-                        onConfirm = { state.courseName = it },
-                    )
-                },
-            )
-            ArrowPreference(
-                title = "教室",
-                endActions = { PreferenceValue(state.classroom.ifBlank { "未设置" }) },
-                onClick = {
-                    editDialog = EditDialogSpec(
-                        title = "教室",
-                        initialValue = state.classroom,
-                        onConfirm = { state.classroom = it },
-                    )
-                },
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = {
-                    activity.uiSendTestBroadcastToTarget(60_000L, state.courseName, state.classroom)
-                    Toast.makeText(
-                        activity,
-                        "已发送测试通知，请查看超级岛效果",
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("发送测试通知")
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        dismissibleHint(
+            hints = hints,
+            key = "hint_test_notify",
+            text = "发送一条模拟课程提醒，验证超级岛效果是否正常。如果未发送，请强制停止作用域和模块重试。如果测试通知正常但实际提醒失效，请在桌面或负一屏添加小爱课程表小组件。",
+        )
+        item(key = "section_0") {
+            SettingsSection {
+                ArrowPreference(
+                    title = "课程名称",
+                    endActions = { PreferenceValue(state.courseName.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "课程名称",
+                            initialValue = state.courseName,
+                            onConfirm = { state.courseName = it },
+                        )
+                    },
+                )
+                ArrowPreference(
+                    title = "教室",
+                    endActions = { PreferenceValue(state.classroom.ifBlank { "未设置" }) },
+                    onClick = {
+                        editDialog = EditDialogSpec(
+                            title = "教室",
+                            initialValue = state.classroom,
+                            onConfirm = { state.classroom = it },
+                        )
+                    },
+                )
+
+                Button(
+                    onClick = {
+                        activity.uiSendTestBroadcastToTarget(
+                            60_000L,
+                            state.courseName,
+                            state.classroom
+                        )
+                        Toast.makeText(
+                            activity,
+                            "已发送测试通知，请查看超级岛效果",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                ) {
+                    Text("发送测试通知")
+                }
             }
         }
     }
@@ -1251,24 +1173,12 @@ private fun MutedText(text: String) {
 }
 
 @Composable
-private fun DismissibleHint(
+private fun TimeoutPage(
     activity: MainActivity,
-    key: String,
-    text: String,
+    state: SettingsComposeState,
+    modifier: Modifier = Modifier,
+    pagePadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    var dismissed by remember(key) {
-        mutableStateOf(activity.uiIsHintDismissed(key))
-    }
-    if (!dismissed) {
-        InformationCard(text = text, onClose = {
-            dismissed = true
-            activity.uiSetHintDismissed(key, true)
-        })
-    }
-}
-
-@Composable
-private fun TimeoutCard(activity: MainActivity, state: SettingsComposeState) {
     val context = LocalContext.current
     val stageLabels = remember { listOf("通知后", "上课后", "下课后") }
     val stageEntries = remember(stageLabels) { stageLabels }
@@ -1339,81 +1249,97 @@ private fun TimeoutCard(activity: MainActivity, state: SettingsComposeState) {
         state.timeoutState = saved
     }
 
-    DismissibleHint(
-        activity = activity,
-        key = "hint_timeout",
-        text = "通知消失时岛随之消失；岛消失不影响通知。默认 = 使用系统值（岛 3600 秒，通知 720 分钟）",
-    )
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        dismissibleHint(
+            hints = hints,
+            key = "hint_timeout",
+            text = "通知消失时岛随之消失；岛消失不影响通知。默认 = 使用系统值（岛 3600 秒，通知 720 分钟）",
+        )
 
-    stageLabels.forEachIndexed { idx, label ->
-        SettingsSection(
-            title = "岛消失 · $label",
-        ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                SwitchPreference(
-                    title = "默认",
-                    checked = islandDefaults[idx],
-                    onCheckedChange = {
-                        islandDefaults[idx] = it
-                        if (!it && islandVals[idx] <= 0) {
-                            islandVals[idx] = 1
-                        }
-                        persistTimeoutStateNow()
-                    },
-                )
-                if (!islandDefaults[idx]) {
-                    ArrowPreference(
-                        title = "时长",
-                        endActions = { PreferenceValue(formatTimeoutDuration(islandVals[idx], islandUnits[idx])) },
-                        onClick = { islandPickerStage = idx },
+        stageLabels.forEachIndexed { idx, label ->
+            item(key = "岛消失 · $label") {
+                SettingsSection(
+                    title = "岛消失 · $label",
+                ) {
+                    SwitchPreference(
+                        title = "默认",
+                        checked = islandDefaults[idx],
+                        onCheckedChange = {
+                            islandDefaults[idx] = it
+                            if (!it && islandVals[idx] <= 0) {
+                                islandVals[idx] = 1
+                            }
+                            persistTimeoutStateNow()
+                        },
                     )
+                    if (!islandDefaults[idx]) {
+                        ArrowPreference(
+                            title = "时长",
+                            endActions = {
+                                PreferenceValue(
+                                    formatTimeoutDuration(
+                                        islandVals[idx],
+                                        islandUnits[idx]
+                                    )
+                                )
+                            },
+                            onClick = { islandPickerStage = idx },
+                        )
+                    }
                 }
             }
         }
-    }
 
-    DismissibleHint(
-        activity = activity,
-        key = "hint_timeout_notify_expire",
-        text = "设置时间到达后，将取消通知，后续将不再更新状态（上课/下课）。",
-    )
-    SettingsSection(
-        title = "通知消失",
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-            SwitchPreference(
-                title = "默认",
-                checked = notifGlobalDefault,
-                onCheckedChange = {
-                    notifGlobalDefault = it
-                    if (!it && notifVals[notifStage] <= 0) {
-                        notifVals[notifStage] = 1
-                    }
-                    persistTimeoutStateNow()
-                },
-            )
-            if (!notifGlobalDefault) {
-                OverlayDropdownPreference(
-                    title = "触发阶段",
-                    items = stageEntries,
-                    selectedIndex = notifStage,
-                    onSelectedIndexChange = { newIndex ->
-                        notifStage = newIndex.coerceIn(0, stageLabels.lastIndex)
-                        if (notifVals[notifStage] <= 0) {
+        dismissibleHint(
+            hints = hints,
+            key = "hint_timeout_notify_expire",
+            text = "设置时间到达后，将取消通知，后续将不再更新状态（上课/下课）。",
+        )
+        item(key = "通知消失") {
+            SettingsSection(
+                title = "通知消失",
+            ) {
+                SwitchPreference(
+                    title = "默认",
+                    checked = notifGlobalDefault,
+                    onCheckedChange = {
+                        notifGlobalDefault = it
+                        if (!it && notifVals[notifStage] <= 0) {
                             notifVals[notifStage] = 1
                         }
                         persistTimeoutStateNow()
                     },
                 )
-                ArrowPreference(
-                    title = "时长",
-                    endActions = { PreferenceValue(formatTimeoutDuration(notifVals[notifStage], notifUnits[notifStage])) },
-                    onClick = { showNotifPicker = true },
-                )
+                if (!notifGlobalDefault) {
+                    OverlayDropdownPreference(
+                        title = "触发阶段",
+                        items = stageEntries,
+                        selectedIndex = notifStage,
+                        onSelectedIndexChange = { newIndex ->
+                            notifStage = newIndex.coerceIn(0, stageLabels.lastIndex)
+                            if (notifVals[notifStage] <= 0) {
+                                notifVals[notifStage] = 1
+                            }
+                            persistTimeoutStateNow()
+                        },
+                    )
+                    ArrowPreference(
+                        title = "时长",
+                        endActions = {
+                            PreferenceValue(
+                                formatTimeoutDuration(
+                                    notifVals[notifStage],
+                                    notifUnits[notifStage]
+                                )
+                            )
+                        },
+                        onClick = { showNotifPicker = true },
+                    )
+                }
             }
         }
     }
-
     if (islandPickerStage in stageLabels.indices) {
         val stage = islandPickerStage
         MiuixDurationPickerDialog(
@@ -1448,7 +1374,12 @@ private fun TimeoutCard(activity: MainActivity, state: SettingsComposeState) {
 }
 
 @Composable
-private fun ReminderCard(activity: MainActivity, state: SettingsComposeState) {
+private fun ReminderPage(
+    activity: MainActivity,
+    state: SettingsComposeState,
+    modifier: Modifier = Modifier,
+    pagePadding: PaddingValues = PaddingValues(0.dp),
+) {
     var showReminderPicker by remember { mutableStateOf(false) }
     val dataSourceEntries = remember {
         listOf(
@@ -1462,49 +1393,53 @@ private fun ReminderCard(activity: MainActivity, state: SettingsComposeState) {
         state.courseDataSource.equals("shiguang", ignoreCase = true) -> 2
         else -> 0
     }
-    DismissibleHint(
-        activity = activity,
-        key = "hint_reminder",
-        text = "自定义设置通知发送时机",
-    )
-    SettingsSection {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            OverlayDropdownPreference(
-                title = "课程数据源",
-                summary = "通知仍由超级小爱发出",
-                items = dataSourceEntries,
-                selectedIndex = dataSourceIndex,
-                onSelectedIndexChange = {
-                    val source = when (it) {
-                        1 -> "wakeup"
-                        2 -> "shiguang"
-                        else -> "xiaoai"
-                    }
-                    activity.uiEnsureScopeForCourseDataSource(source) {
-                        state.courseDataSource = source
-                        activity.uiEditConfigPrefs().putString("course_data_source", source).apply()
-                        activity.uiOnCourseDataSourceChanged(source)
-                    }
-                },
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            SwitchPreference(
-                title = "补发机制（全局）",
-                summary = "是否在错过提醒时间时补发，由于通知已稳定，不建议启用。",
-                checked = state.repostEnabled,
-                onCheckedChange = {
-                    state.repostEnabled = it
-                    activity.uiEditConfigPrefs().putBoolean("repost_enabled", it).apply()
-                },
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            ArrowPreference(
-                title = "提前提醒",
-                endActions = { PreferenceValue("${state.reminderMinutes.ifBlank { "15" }} 分钟") },
-                onClick = {
-                    showReminderPicker = true
-                },
-            )
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        dismissibleHint(
+            hints = hints,
+            key = "hint_reminder",
+            text = "自定义设置通知发送时机",
+        )
+        item(key = "section_0") {
+            SettingsSection {
+                OverlayDropdownPreference(
+                    title = "课程数据源",
+                    summary = "通知仍由超级小爱发出",
+                    items = dataSourceEntries,
+                    selectedIndex = dataSourceIndex,
+                    onSelectedIndexChange = {
+                        val source = when (it) {
+                            1 -> "wakeup"
+                            2 -> "shiguang"
+                            else -> "xiaoai"
+                        }
+                        activity.uiEnsureScopeForCourseDataSource(source) {
+                            state.courseDataSource = source
+                            activity.uiEditConfigPrefs().putString("course_data_source", source)
+                                .apply()
+                            activity.uiOnCourseDataSourceChanged(source)
+                        }
+                    },
+                )
+
+                SwitchPreference(
+                    title = "补发机制（全局）",
+                    summary = "是否在错过提醒时间时补发，由于通知已稳定，不建议启用。",
+                    checked = state.repostEnabled,
+                    onCheckedChange = {
+                        state.repostEnabled = it
+                        activity.uiEditConfigPrefs().putBoolean("repost_enabled", it).apply()
+                    },
+                )
+
+                ArrowPreference(
+                    title = "提前提醒",
+                    endActions = { PreferenceValue("${state.reminderMinutes.ifBlank { "15" }} 分钟") },
+                    onClick = {
+                        showReminderPicker = true
+                    },
+                )
+            }
         }
     }
     if (showReminderPicker) {
@@ -1524,7 +1459,12 @@ private fun ReminderCard(activity: MainActivity, state: SettingsComposeState) {
 }
 
 @Composable
-private fun MuteCard(activity: MainActivity, state: SettingsComposeState) {
+private fun MutePage(
+    activity: MainActivity,
+    state: SettingsComposeState,
+    modifier: Modifier = Modifier,
+    pagePadding: PaddingValues = PaddingValues(0.dp),
+) {
     val buttonModeEntries = remember {
         listOf(
             "静音",
@@ -1533,6 +1473,7 @@ private fun MuteCard(activity: MainActivity, state: SettingsComposeState) {
             "逃课",
         )
     }
+
     fun persistMuteConfigNow() {
         val muteBefore = clampMinuteValue(state.muteMinsBefore)
         val unmuteAfter = clampMinuteValue(state.unmuteMinsAfter)
@@ -1554,98 +1495,100 @@ private fun MuteCard(activity: MainActivity, state: SettingsComposeState) {
             .putInt("island_button_mode", state.islandButtonMode.coerceIn(0, 3))
             .apply()
     }
-    SettingsSection {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            SwitchPreference(
-                title = "上课自动静音",
-                summary = "课程开始前指定时间将手机调为静音",
-                checked = state.muteEnabled,
-                onCheckedChange = {
-                    state.muteEnabled = it
-                    persistMuteConfigNow()
-                },
-            )
-            if (state.muteEnabled) {
-                MinuteEditor("上课前多少分钟静音", state.muteMinsBefore) {
-                    state.muteMinsBefore = it
-                    persistMuteConfigNow()
+
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        item(key = "section_0") {
+            SettingsSection {
+                SwitchPreference(
+                    title = "上课自动静音",
+                    summary = "课程开始前指定时间将手机调为静音",
+                    checked = state.muteEnabled,
+                    onCheckedChange = {
+                        state.muteEnabled = it
+                        persistMuteConfigNow()
+                    },
+                )
+                if (state.muteEnabled) {
+                    MinuteEditor("上课前多少分钟静音", state.muteMinsBefore) {
+                        state.muteMinsBefore = it
+                        persistMuteConfigNow()
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            SwitchPreference(
-                title = "下课自动恢复铃声",
-                summary = "课程结束后指定时间恢复正常响铃",
-                checked = state.unmuteEnabled,
-                onCheckedChange = {
-                    state.unmuteEnabled = it
-                    persistMuteConfigNow()
-                },
-            )
-            if (state.unmuteEnabled) {
-                MinuteEditor("下课后多少分钟恢复铃声", state.unmuteMinsAfter) {
-                    state.unmuteMinsAfter = it
-                    persistMuteConfigNow()
+                SwitchPreference(
+                    title = "下课自动恢复铃声",
+                    summary = "课程结束后指定时间恢复正常响铃",
+                    checked = state.unmuteEnabled,
+                    onCheckedChange = {
+                        state.unmuteEnabled = it
+                        persistMuteConfigNow()
+                    },
+                )
+                if (state.unmuteEnabled) {
+                    MinuteEditor("下课后多少分钟恢复铃声", state.unmuteMinsAfter) {
+                        state.unmuteMinsAfter = it
+                        persistMuteConfigNow()
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
-            Spacer(modifier = Modifier.height(8.dp))
 
-            SwitchPreference(
-                title = "上课自动开启勿扰",
-                summary = "课程开始前指定时间开启勿扰模式",
-                checked = state.dndEnabled,
-                onCheckedChange = {
-                    state.dndEnabled = it
-                    persistMuteConfigNow()
-                },
-            )
-            if (state.dndEnabled) {
-                MinuteEditor("上课前多少分钟开启勿扰", state.dndMinsBefore) {
-                    state.dndMinsBefore = it
-                    persistMuteConfigNow()
+
+                SwitchPreference(
+                    title = "上课自动开启勿扰",
+                    summary = "课程开始前指定时间开启勿扰模式",
+                    checked = state.dndEnabled,
+                    onCheckedChange = {
+                        state.dndEnabled = it
+                        persistMuteConfigNow()
+                    },
+                )
+                if (state.dndEnabled) {
+                    MinuteEditor("上课前多少分钟开启勿扰", state.dndMinsBefore) {
+                        state.dndMinsBefore = it
+                        persistMuteConfigNow()
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            SwitchPreference(
-                title = "下课自动关闭勿扰",
-                summary = "课程结束后指定时间关闭勿扰，恢复正常通知",
-                checked = state.undndEnabled,
-                onCheckedChange = {
-                    state.undndEnabled = it
-                    persistMuteConfigNow()
-                },
-            )
-            if (state.undndEnabled) {
-                MinuteEditor("下课后多少分钟关闭勿扰", state.undndMinsAfter) {
-                    state.undndMinsAfter = it
-                    persistMuteConfigNow()
+                SwitchPreference(
+                    title = "下课自动关闭勿扰",
+                    summary = "课程结束后指定时间关闭勿扰，恢复正常通知",
+                    checked = state.undndEnabled,
+                    onCheckedChange = {
+                        state.undndEnabled = it
+                        persistMuteConfigNow()
+                    },
+                )
+                if (state.undndEnabled) {
+                    MinuteEditor("下课后多少分钟关闭勿扰", state.undndMinsAfter) {
+                        state.undndMinsAfter = it
+                        persistMuteConfigNow()
+                    }
                 }
             }
         }
-    }
-    DismissibleHint(
-        activity = activity,
-        key = "hint_island_button_mode",
-        text = "设置上课岛上显示的按钮执行的操作。两者即同时勿扰和静音，在岛上显示为静默。",
-    )
-    SettingsSection(
-        title = "超级岛按钮功能",
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            OverlayDropdownPreference(
-                title = "按钮模式",
-                items = buttonModeEntries,
-                selectedIndex = state.islandButtonMode.coerceIn(0, 3),
-                onSelectedIndexChange = {
-                    state.islandButtonMode = it
-                    persistMuteConfigNow()
-                },
-            )
+        dismissibleHint(
+            hints = hints,
+            key = "hint_island_button_mode",
+            text = "设置上课岛上显示的按钮执行的操作。两者即同时勿扰和静音，在岛上显示为静默。",
+        )
+        item(key = "超级岛按钮功能") {
+            SettingsSection(
+                title = "超级岛按钮功能",
+            ) {
+                OverlayDropdownPreference(
+                    title = "按钮模式",
+                    items = buttonModeEntries,
+                    selectedIndex = state.islandButtonMode.coerceIn(0, 3),
+                    onSelectedIndexChange = {
+                        state.islandButtonMode = it
+                        persistMuteConfigNow()
+                    },
+                )
+            }
         }
     }
+
 }
 
 @Composable
@@ -1660,7 +1603,6 @@ private fun MinuteEditor(
     val safeMin = minValue.coerceAtLeast(0)
     val safeMax = maxOf(safeMin, maxValue)
     val current = (value.toIntOrNull() ?: safeMin).coerceIn(safeMin, safeMax)
-    Spacer(modifier = Modifier.height(8.dp))
     ArrowPreference(
         title = label,
         endActions = { PreferenceValue("$current 分钟") },
@@ -1693,7 +1635,6 @@ private fun SectionEditor(
     val safeMin = minSec.coerceAtLeast(1)
     val safeMax = maxOf(safeMin, maxSec)
     val currentSec = (value.toIntOrNull() ?: safeMin).coerceIn(safeMin, safeMax)
-    Spacer(modifier = Modifier.height(8.dp))
     ArrowPreference(
         title = label,
         endActions = { PreferenceValue("第${currentSec}节") },
@@ -1715,7 +1656,12 @@ private fun SectionEditor(
 }
 
 @Composable
-private fun WakeupCard(activity: MainActivity, state: SettingsComposeState) {
+private fun WakeupPage(
+    activity: MainActivity,
+    state: SettingsComposeState,
+    modifier: Modifier = Modifier,
+    pagePadding: PaddingValues = PaddingValues(0.dp),
+) {
     val morningBoundary = (state.wakeupMorningLastSec.toIntOrNull() ?: 4).coerceAtLeast(1)
     val afternoonBoundary = (state.wakeupAfternoonFirstSec.toIntOrNull() ?: 5).coerceAtLeast(1)
     val morningRuleMax = morningBoundary
@@ -1723,7 +1669,9 @@ private fun WakeupCard(activity: MainActivity, state: SettingsComposeState) {
         morningBoundary,
         afternoonBoundary,
         state.wakeupMorningRules.maxOfOrNull { (it.sec.toIntOrNull() ?: 1).coerceAtLeast(1) } ?: 1,
-        state.wakeupAfternoonRules.maxOfOrNull { (it.sec.toIntOrNull() ?: afternoonBoundary).coerceAtLeast(afternoonBoundary) } ?: afternoonBoundary,
+        state.wakeupAfternoonRules.maxOfOrNull {
+            (it.sec.toIntOrNull() ?: afternoonBoundary).coerceAtLeast(afternoonBoundary)
+        } ?: afternoonBoundary,
     )
     val sectionBoundaryMax = maxOf(30, knownMaxSec)
 
@@ -1737,7 +1685,8 @@ private fun WakeupCard(activity: MainActivity, state: SettingsComposeState) {
         }
         state.wakeupAfternoonRules.replaceAll { rule ->
             rule.copy(
-                sec = (rule.sec.toIntOrNull() ?: afternoonFirst).coerceAtLeast(afternoonFirst).toString(),
+                sec = (rule.sec.toIntOrNull() ?: afternoonFirst).coerceAtLeast(afternoonFirst)
+                    .toString(),
             )
         }
         state.wakeupMorningLastSec = morningLast.toString()
@@ -1752,109 +1701,113 @@ private fun WakeupCard(activity: MainActivity, state: SettingsComposeState) {
             .apply()
     }
 
-    DismissibleHint(
-        activity = activity,
-        key = "hint_wakeup",
-        text = "根据课表在系统时钟创建叫醒闹钟",
-    )
-    SettingsSection {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            SwitchPreference(
-                title = "上午自动叫醒",
-                summary = "根据上午第一次课的节次指定闹钟设置",
-                checked = state.wakeupMorningEnabled,
-                onCheckedChange = {
-                    if (it) {
-                        activity.uiEnsureScopeForWakeupEnable {
-                            state.wakeupMorningEnabled = true
-                            persistWakeupConfigNow()
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        dismissibleHint(
+            hints = hints,
+            key = "hint_wakeup",
+            text = "根据课表在系统时钟创建叫醒闹钟",
+        )
+        item(key = "section_0") {
+            SettingsSection {
+                SwitchPreference(
+                    title = "上午自动叫醒",
+                    summary = "根据上午第一次课的节次指定闹钟设置",
+                    checked = state.wakeupMorningEnabled,
+                    onCheckedChange = {
+                        if (it) {
+                            activity.uiEnsureScopeForWakeupEnable {
+                                state.wakeupMorningEnabled = true
+                                persistWakeupConfigNow()
+                            }
+                            return@SwitchPreference
                         }
-                        return@SwitchPreference
-                    }
-                    state.wakeupMorningEnabled = it
-                    persistWakeupConfigNow()
-                },
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+                        state.wakeupMorningEnabled = it
+                        persistWakeupConfigNow()
+                    },
+                )
 
-            SwitchPreference(
-                title = "下午自动叫醒",
-                summary = "根据下午第一次课的节次指定闹钟设置",
-                checked = state.wakeupAfternoonEnabled,
-                onCheckedChange = {
-                    if (it) {
-                        activity.uiEnsureScopeForWakeupEnable {
-                            state.wakeupAfternoonEnabled = true
-                            persistWakeupConfigNow()
+
+                SwitchPreference(
+                    title = "下午自动叫醒",
+                    summary = "根据下午第一次课的节次指定闹钟设置",
+                    checked = state.wakeupAfternoonEnabled,
+                    onCheckedChange = {
+                        if (it) {
+                            activity.uiEnsureScopeForWakeupEnable {
+                                state.wakeupAfternoonEnabled = true
+                                persistWakeupConfigNow()
+                            }
+                            return@SwitchPreference
                         }
-                        return@SwitchPreference
-                    }
-                    state.wakeupAfternoonEnabled = it
-                    persistWakeupConfigNow()
-                },
-            )
+                        state.wakeupAfternoonEnabled = it
+                        persistWakeupConfigNow()
+                    },
+                )
+            }
         }
-    }
-    if (state.wakeupMorningEnabled) {
-        SettingsSection(
-            title = "上午规则",
-        ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                WakeRuleList(
-                    rules = state.wakeupMorningRules,
-                    defaultRule = WakeRule("1", "7", "00"),
+        if (state.wakeupMorningEnabled) {
+            item(key = "上午规则") {
+                SettingsSection(
+                    title = "上午规则",
+                ) {
+                    WakeRuleList(
+                        rules = state.wakeupMorningRules,
+                        defaultRule = WakeRule("1", "7", "00"),
+                        minSec = 1,
+                        maxSec = morningRuleMax,
+                        onChanged = { persistWakeupConfigNow() },
+                    )
+                }
+            }
+        }
+        if (state.wakeupAfternoonEnabled) {
+            item(key = "下午规则") {
+                SettingsSection(
+                    title = "下午规则",
+                ) {
+                    WakeRuleList(
+                        rules = state.wakeupAfternoonRules,
+                        defaultRule = WakeRule("5", "12", "00"),
+                        minSec = afternoonBoundary,
+                        maxSec = maxOf(30, afternoonBoundary, knownMaxSec),
+                        onChanged = { persistWakeupConfigNow() },
+                    )
+                }
+            }
+        }
+
+        dismissibleHint(
+            hints = hints,
+            key = "hint_wakeup_section_boundary",
+            text = "用于区分上午/下午课程边界",
+        )
+        item(key = "节次划分") {
+            SettingsSection(
+                title = "节次划分",
+            ) {
+                SectionEditor(
+                    label = "上午最大节次（≤此节为上午）",
+                    value = state.wakeupMorningLastSec,
                     minSec = 1,
-                    maxSec = morningRuleMax,
-                    onChanged = { persistWakeupConfigNow() },
-                )
-            }
-        }
-    }
-    if (state.wakeupAfternoonEnabled) {
-        SettingsSection(
-            title = "下午规则",
-        ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                WakeRuleList(
-                    rules = state.wakeupAfternoonRules,
-                    defaultRule = WakeRule("5", "12", "00"),
-                    minSec = afternoonBoundary,
-                    maxSec = maxOf(30, afternoonBoundary, knownMaxSec),
-                    onChanged = { persistWakeupConfigNow() },
-                )
+                    maxSec = sectionBoundaryMax,
+                ) {
+                    state.wakeupMorningLastSec = it
+                    persistWakeupConfigNow()
+                }
+                SectionEditor(
+                    label = "下午起始节次（≥此节为下午）",
+                    value = state.wakeupAfternoonFirstSec,
+                    minSec = 1,
+                    maxSec = sectionBoundaryMax,
+                ) {
+                    state.wakeupAfternoonFirstSec = it
+                    persistWakeupConfigNow()
+                }
             }
         }
     }
 
-    DismissibleHint(
-        activity = activity,
-        key = "hint_wakeup_section_boundary",
-        text = "用于区分上午/下午课程边界",
-    )
-    SettingsSection(
-        title = "节次划分",
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            SectionEditor(
-                label = "上午最大节次（≤此节为上午）",
-                value = state.wakeupMorningLastSec,
-                minSec = 1,
-                maxSec = sectionBoundaryMax,
-            ) {
-                state.wakeupMorningLastSec = it
-                persistWakeupConfigNow()
-            }
-            SectionEditor(
-                label = "下午起始节次（≥此节为下午）",
-                value = state.wakeupAfternoonFirstSec,
-                minSec = 1,
-                maxSec = sectionBoundaryMax,
-            ) {
-                state.wakeupAfternoonFirstSec = it
-                persistWakeupConfigNow()
-            }
-        }
-    }
 }
 
 @Composable
@@ -1871,33 +1824,33 @@ private fun WakeRuleList(
     val safeMax = maxOf(safeMin, maxSec)
     var editingIndex by remember { mutableIntStateOf(-1) }
     var pendingDeleteIndex by remember { mutableIntStateOf(-1) }
-    Column {
-        rules.forEachIndexed { index, rule ->
-            WakeRuleRow(
-                index = index,
-                rule = rule,
-                onEdit = { editingIndex = index },
-                onDelete = { pendingDeleteIndex = index },
-            )
-            if (index != rules.lastIndex) {
-                Spacer(modifier = Modifier.height(6.dp))
-            }
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        AddEntryRow(
-            title = "新增规则",
-            summary = "添加节次与叫醒时间",
-            onClick = {
-                val sec = (defaultRule.sec.toIntOrNull() ?: safeMin).coerceIn(safeMin, safeMax)
-                rules += defaultRule.copy(sec = sec.toString())
-                onChanged()
-                editingIndex = rules.lastIndex
-            },
+    rules.forEachIndexed { index, rule ->
+        WakeRuleRow(
+            index = index,
+            rule = rule,
+            onEdit = { editingIndex = index },
+            onDelete = { pendingDeleteIndex = index },
         )
+
     }
+    ArrowPreference(
+        title = "新增规则",
+        summary = "添加节次与叫醒时间",
+        onClick = {
+            val sec = (defaultRule.sec.toIntOrNull() ?: safeMin).coerceIn(safeMin, safeMax)
+            rules += defaultRule.copy(sec = sec.toString())
+            onChanged()
+            editingIndex = rules.lastIndex
+        },
+    )
     if (editingIndex in rules.indices) {
         var sec by remember(editingIndex) {
-            mutableIntStateOf((rules[editingIndex].sec.toIntOrNull() ?: safeMin).coerceIn(safeMin, safeMax))
+            mutableIntStateOf(
+                (rules[editingIndex].sec.toIntOrNull() ?: safeMin).coerceIn(
+                    safeMin,
+                    safeMax
+                )
+            )
         }
         var hour by remember(editingIndex) {
             mutableIntStateOf((rules[editingIndex].hour.toIntOrNull() ?: 0).coerceIn(0, 23))
@@ -1912,54 +1865,47 @@ private fun WakeRuleList(
             title = "编辑规则",
             onDismissRequest = { editingIndex = -1 },
         ) {
-            Column {
-                SelectorEntryButton(
-                    text = "节次: 第${sec}节",
-                    onClick = { showSecPicker = true },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                SelectorEntryButton(
-                    text = "时间: ${String.format(locale, "%02d", hour)}:${String.format(locale, "%02d", minute)}",
-                    onClick = { showTimePicker = true },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            ArrowPreference(
+                title = "节次: 第${sec}节",
+                onClick = { showSecPicker = true },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            ArrowPreference(
+                title = "时间: ${String.format(locale, "%02d", hour)}:${
+                    String.format(
+                        locale,
+                        "%02d",
+                        minute
+                    )
+                }",
+                onClick = { showTimePicker = true },
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextButton(
-                    modifier = Modifier.weight(1f),
-                    text = "取消",
-                    minHeight = 50.dp,
-                    onClick = { editingIndex = -1 },
-                )
-                TextButton(
-                    modifier = Modifier.weight(1f),
-                    text = "确定",
-                    minHeight = 50.dp,
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                    onClick = {
-                        if (editingIndex in rules.indices) {
-                            rules[editingIndex] = rules[editingIndex].copy(
-                                sec = sec.toString(),
-                                hour = hour.toString(),
-                                minute = String.format(
-                                    locale,
-                                    "%02d",
-                                    minute,
-                                ),
-                            )
-                            onChanged()
-                            Toast.makeText(
-                                context,
-                                "已保存规则 ${editingIndex + 1}",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                        editingIndex = -1
-                    },
-                )
-            }
+            DialogActions(
+                onDismiss = { editingIndex = -1 },
+                onConfirm = {
+                    if (editingIndex in rules.indices) {
+                        rules[editingIndex] = rules[editingIndex].copy(
+                            sec = sec.toString(),
+                            hour = hour.toString(),
+                            minute = String.format(
+                                locale,
+                                "%02d",
+                                minute,
+                            ),
+                        )
+                        onChanged()
+                        Toast.makeText(
+                            context,
+                            "已保存规则 ${editingIndex + 1}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    editingIndex = -1
+                },
+            )
         }
         if (showSecPicker) {
             MiuixSectionPickerDialog(
@@ -2024,43 +1970,28 @@ private fun WakeRuleRow(
     val hour = rule.hour.toIntOrNull()?.coerceIn(0, 23) ?: 0
     val minute = rule.minute.toIntOrNull()?.coerceIn(0, 59) ?: 0
     val sec = rule.sec.toIntOrNull()?.coerceAtLeast(1) ?: 1
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "规则 ${index + 1}",
-                style = MiuixTheme.textStyles.main,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "第${sec}节 -> ${String.format(locale, "%02d", hour)}:${String.format(locale, "%02d", minute)}",
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
-        }
-        TextButton(
-            text = "编辑",
-            minHeight = 44.dp,
-            onClick = onEdit,
+    EditableEntry(onEdit = onEdit, onDelete = onDelete) {
+        Text(
+            "规则 ${index + 1}",
+            style = MiuixTheme.textStyles.main,
+            fontWeight = FontWeight.Bold,
         )
-        Spacer(modifier = Modifier.width(6.dp))
-        TextButton(
-            text = "删除",
-            minHeight = 44.dp,
-            colors = ButtonDefaults.textButtonColors(
-                color = MiuixTheme.colorScheme.error,
-                disabledColor = MiuixTheme.colorScheme.error.copy(alpha = 0.35f),
-                textColor = MiuixTheme.colorScheme.onError,
-                disabledTextColor = MiuixTheme.colorScheme.onError.copy(alpha = 0.70f),
-            ),
-            onClick = onDelete,
+        Text(
+            "第${sec}节 -> ${String.format(locale, "%02d", hour)}:${
+                String.format(
+                    locale,
+                    "%02d",
+                    minute
+                )
+            }",
+            style = MiuixTheme.textStyles.body2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
     }
 }
 
-private fun clampMinuteValue(value: String): Int = value.toIntOrNull()?.coerceIn(0, MAX_MINUTE_VALUE) ?: 0
+private fun clampMinuteValue(value: String): Int =
+    value.toIntOrNull()?.coerceIn(0, MAX_MINUTE_VALUE) ?: 0
 
 private fun normalizeTimeoutUnit(unit: String): String = when (unit) {
     "s" -> "s"
@@ -2117,7 +2048,11 @@ private fun parseWakeRules(json: String): List<WakeRule> {
                     WakeRule(
                         sec = obj.optInt("sec", 1).toString(),
                         hour = obj.optInt("hour", 7).toString(),
-                        minute = String.format(Locale.getDefault(), "%02d", obj.optInt("minute", 0)),
+                        minute = String.format(
+                            Locale.getDefault(),
+                            "%02d",
+                            obj.optInt("minute", 0)
+                        ),
                     ),
                 )
             }
@@ -2172,7 +2107,8 @@ private fun alignStatusTimerWithExpanded(stages: MutableList<StageCustomState>):
     var changed = 0
     stages.indices.forEach { index ->
         val stage = stages[index]
-        val expandedKind = detectExpandedTimerKind(stage.hintTitle.trim(), stage.hintSubtitle.trim())
+        val expandedKind =
+            detectExpandedTimerKind(stage.hintTitle.trim(), stage.hintSubtitle.trim())
         val statusKind = detectTimerKind(stage.tplB.trim())
         if ((expandedKind == -1 || expandedKind == 1) && (statusKind == -1 || statusKind == 1) && expandedKind != statusKind) {
             stages[index] = stage.copy(tplB = forceTimerKind(stage.tplB.trim(), expandedKind))
@@ -2223,48 +2159,49 @@ private fun HolidayTab(
     var pendingDeleteWorkswap by remember { mutableStateOf<HolidayManager.HolidayEntry?>(null) }
     val maxWeek = remember(state.year) { activity.uiReadTotalWeekFromCourseData().coerceAtLeast(1) }
 
-    Column(
-        modifier = modifier
-            .verticalScroll(rememberScrollState())
-            .padding(
-                withExtraPadding(
-                    pagePadding,
-                    horizontal = 16.dp,
-                    vertical = 8.dp,
-                )
-            ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        DismissibleHint(
-            activity = activity,
+    val hints = rememberDismissibleHints(activity)
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        dismissibleHint(
+            hints = hints,
             key = "hint_holiday_overview",
             text = "节假日当天不发课前提醒；调休工作日按指定周次及星期发提醒。",
         )
-        SettingsSection {
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("年份", color = MiuixTheme.colorScheme.onSurfaceContainer)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { showYearDialog = true }) { Text(state.year.toString()) }
-                    Spacer(modifier = Modifier.width(8.dp))
+        item(key = "section_0") {
+            SettingsSection {
+                ArrowPreference(
+                    title = "年份",
+                    endActions = { PreferenceValue(state.year.toString()) },
+                    onClick = { showYearDialog = true },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     Button(
                         onClick = {
                             scope.launch {
                                 Toast.makeText(activity, "正在获取...", Toast.LENGTH_SHORT).show()
-                                val result = withContext(Dispatchers.IO) { fetchHolidayEntries(state.year) }
+                                val result =
+                                    withContext(Dispatchers.IO) { fetchHolidayEntries(state.year) }
                                 result.error?.let {
-                                    Toast.makeText(activity, "获取失败：$it", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(activity, "获取失败：$it", Toast.LENGTH_SHORT)
+                                        .show()
                                     return@launch
                                 }
                                 val entries = result.entries
                                 if (entries.isEmpty()) {
-                                    Toast.makeText(activity, "${state.year}年暂无数据", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        activity,
+                                        "${state.year}年暂无数据",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                     return@launch
                                 }
                                 HolidayManager.mergeAndSave(activity, state.year, entries)
                                 activity.uiSyncHolidayToHook(state.year)
                                 entries.forEach { e ->
-                                    val endDate = if (e.endDate.isNullOrEmpty()) e.date else e.endDate
+                                    val endDate =
+                                        if (e.endDate.isNullOrEmpty()) e.date else e.endDate
                                     activity.uiRescheduleIfCoversToday(e.date, endDate)
                                 }
                                 state.loadFrom(activity)
@@ -2277,25 +2214,27 @@ private fun HolidayTab(
                         },
                         modifier = Modifier.weight(1f),
                     ) { Text("网络获取") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { showClearYearDialog = true }) { Text("清除本年") }
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = { showClearYearDialog = true },
+                    ) { Text("清除本年") }
                 }
             }
         }
 
-        SettingsSection(
-            title = "节假日",
-        ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+        item(key = "节假日") {
+            SettingsSection(
+                title = "节假日",
+            ) {
                 if (state.holidayEntries.isEmpty()) {
                     Text(
                         text = "暂无节假日数据",
                         style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.6f),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                     )
                 } else {
-                    state.holidayEntries.forEachIndexed { index, entry ->
+                    state.holidayEntries.forEach { entry ->
                         HolidayRow(
                             entry = entry,
                             onEdit = {
@@ -2310,14 +2249,11 @@ private fun HolidayTab(
                                 pendingDeleteHoliday = entry
                             },
                         )
-                        if (index != state.holidayEntries.lastIndex) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
+
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                AddEntryRow(
+
+                ArrowPreference(
                     title = "新增节假日",
                     summary = "添加节假日日期或区间",
                     onClick = {
@@ -2328,18 +2264,19 @@ private fun HolidayTab(
             }
         }
 
-        SettingsSection(
-            title = "调休工作日",
-        ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+        item(key = "调休工作日") {
+            SettingsSection(
+                title = "调休工作日",
+            ) {
                 if (state.workswapEntries.isEmpty()) {
                     Text(
                         text = "暂无调休工作日数据",
                         style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(16.dp),
                     )
                 } else {
-                    state.workswapEntries.forEachIndexed { index, entry ->
+                    state.workswapEntries.forEach { entry ->
                         WorkswapRow(
                             entry = entry,
                             onEdit = {
@@ -2355,14 +2292,11 @@ private fun HolidayTab(
                                 pendingDeleteWorkswap = entry
                             },
                         )
-                        if (index != state.workswapEntries.lastIndex) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
+
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                AddEntryRow(
+
+                ArrowPreference(
                     title = "新增调休工作日",
                     summary = "添加调休上班日与跟随周次",
                     onClick = {
@@ -2372,7 +2306,7 @@ private fun HolidayTab(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(24.dp))
+
     }
 
     if (showYearDialog) {
@@ -2411,16 +2345,21 @@ private fun HolidayTab(
         ConfirmationDialog(
             show = true,
             title = "删除节假日",
-            summary = "确定删除“${target.name}”（${formatDateRange(target.date, target.endDate)}）吗？",
+            summary = "确定删除“${target.name}”（${
+                formatDateRange(
+                    target.date,
+                    target.endDate
+                )
+            }）吗？",
             confirmText = "删除",
             onDismissRequest = { pendingDeleteHoliday = null },
             onConfirm = {
                 val all = HolidayManager.loadEntries(activity, state.year).toMutableList()
                 all.removeIf { e ->
                     e.date == target.date &&
-                        (e.endDate ?: "") == (target.endDate ?: "") &&
-                        e.name == target.name &&
-                        e.type == target.type
+                            (e.endDate ?: "") == (target.endDate ?: "") &&
+                            e.name == target.name &&
+                            e.type == target.type
                 }
                 HolidayManager.saveEntries(activity, state.year, all)
                 activity.uiSyncHolidayToHook(state.year)
@@ -2465,7 +2404,6 @@ private fun HolidayTab(
 
     holidayDraft?.let { draft ->
         HolidayEditDialog(
-            activity = activity,
             title = if (holidayEditEntry == null) "新增节假日" else "编辑节假日",
             draft = draft,
             onDismiss = { holidayDraft = null },
@@ -2476,9 +2414,9 @@ private fun HolidayTab(
                 holidayEditEntry?.let { old ->
                     all.removeIf { e ->
                         e.date == old.date &&
-                            (e.endDate ?: "") == (old.endDate ?: "") &&
-                            e.name == old.name &&
-                            e.type == old.type
+                                (e.endDate ?: "") == (old.endDate ?: "") &&
+                                e.name == old.name &&
+                                e.type == old.type
                     }
                 }
                 all += HolidayManager.HolidayEntry(
@@ -2494,7 +2432,10 @@ private fun HolidayTab(
                 val endDate = if (save.endDate.isBlank()) save.date else save.endDate
                 activity.uiRescheduleIfCoversToday(save.date, endDate)
                 holidayEditEntry?.let { old ->
-                    activity.uiRescheduleIfCoversToday(old.date, if (old.endDate.isNullOrEmpty()) old.date else old.endDate)
+                    activity.uiRescheduleIfCoversToday(
+                        old.date,
+                        if (old.endDate.isNullOrEmpty()) old.date else old.endDate
+                    )
                 }
                 state.loadFrom(activity)
                 holidayDraft = null
@@ -2509,7 +2450,6 @@ private fun HolidayTab(
 
     workswapDraft?.let { draft ->
         WorkswapEditDialog(
-            activity = activity,
             title = if (workswapEditEntry == null) "新增调休工作日" else "编辑调休工作日",
             draft = draft,
             maxWeek = maxWeek,
@@ -2563,7 +2503,12 @@ private fun fetchHolidayEntries(year: Int): FetchHolidayResult {
             readTimeout = 10_000
             setRequestProperty("User-Agent", "XiaoaiIsland/1.0")
         }
-        val text = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+        val text = BufferedReader(
+            InputStreamReader(
+                conn.inputStream,
+                Charsets.UTF_8
+            )
+        ).use { it.readText() }
         conn.disconnect()
         val entries = HolidayManager.parseApiResponse(text)
         var holidayDays = 0
@@ -2583,9 +2528,18 @@ private fun fetchHolidayEntries(year: Int): FetchHolidayResult {
             }
             if (e.type == HolidayManager.TYPE_HOLIDAY) holidayDays += days else workswapDays += days
         }
-        FetchHolidayResult(entries = entries, holidayDays = holidayDays, workswapDays = workswapDays)
+        FetchHolidayResult(
+            entries = entries,
+            holidayDays = holidayDays,
+            workswapDays = workswapDays
+        )
     } catch (e: Exception) {
-        FetchHolidayResult(entries = emptyList(), holidayDays = 0, workswapDays = 0, error = e.message ?: "未知错误")
+        FetchHolidayResult(
+            entries = emptyList(),
+            holidayDays = 0,
+            workswapDays = 0,
+            error = e.message ?: "未知错误"
+        )
     }
 }
 
@@ -2596,38 +2550,16 @@ private fun HolidayRow(
     onDelete: () -> Unit,
 ) {
     val dateLabel = formatDateRange(entry.date, entry.endDate)
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "$dateLabel  ${entry.name}",
-                style = MiuixTheme.textStyles.main,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                if (entry.isCustom) "自定义节假日" else "API 节假日",
-                style = MiuixTheme.textStyles.body2,
-                color = if (entry.isCustom) Color(0xFF7965AF) else Color(0xFF389E0D),
-            )
-        }
-        TextButton(
-            text = "编辑",
-            minHeight = 44.dp,
-            onClick = onEdit,
+    EditableEntry(onEdit = onEdit, onDelete = onDelete) {
+        Text(
+            "$dateLabel  ${entry.name}",
+            style = MiuixTheme.textStyles.main,
+            fontWeight = FontWeight.Bold,
         )
-        Spacer(modifier = Modifier.width(6.dp))
-        TextButton(
-            text = "删除",
-            minHeight = 44.dp,
-            colors = ButtonDefaults.textButtonColors(
-                color = MiuixTheme.colorScheme.error,
-                disabledColor = MiuixTheme.colorScheme.error.copy(alpha = 0.35f),
-                textColor = MiuixTheme.colorScheme.onError,
-                disabledTextColor = MiuixTheme.colorScheme.onError.copy(alpha = 0.70f),
-            ),
-            onClick = onDelete,
+        Text(
+            if (entry.isCustom) "自定义节假日" else "API 节假日",
+            style = MiuixTheme.textStyles.body2,
+            color = if (entry.isCustom) Color(0xFF7965AF) else Color(0xFF389E0D),
         )
     }
 }
@@ -2639,77 +2571,22 @@ private fun WorkswapRow(
     onDelete: () -> Unit,
 ) {
     val dateLabel = formatDateRange(entry.date, entry.endDate)
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "$dateLabel  ${entry.name}",
-                style = MiuixTheme.textStyles.main,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "替换为: ${entry.followDesc()}",
-                style = MiuixTheme.textStyles.body2,
-                color = Color(0xFF6750A4),
-            )
-            Text(
-                if (entry.isCustom) "自定义调休" else "API 调休",
-                style = MiuixTheme.textStyles.body2,
-                color = if (entry.isCustom) Color(0xFF7965AF) else Color(0xFF389E0D),
-            )
-        }
-        TextButton(
-            text = "编辑",
-            minHeight = 44.dp,
-            onClick = onEdit,
+    EditableEntry(onEdit = onEdit, onDelete = onDelete) {
+        Text(
+            "$dateLabel  ${entry.name}",
+            style = MiuixTheme.textStyles.main,
+            fontWeight = FontWeight.Bold,
         )
-        Spacer(modifier = Modifier.width(6.dp))
-        TextButton(
-            text = "删除",
-            minHeight = 44.dp,
-            colors = ButtonDefaults.textButtonColors(
-                color = MiuixTheme.colorScheme.error,
-                disabledColor = MiuixTheme.colorScheme.error.copy(alpha = 0.35f),
-                textColor = MiuixTheme.colorScheme.onError,
-                disabledTextColor = MiuixTheme.colorScheme.onError.copy(alpha = 0.70f),
-            ),
-            onClick = onDelete,
+        Text(
+            "替换为: ${entry.followDesc()}",
+            style = MiuixTheme.textStyles.body2,
+            color = Color(0xFF6750A4),
         )
-    }
-}
-
-@Composable
-private fun AddEntryRow(
-    title: String,
-    summary: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MiuixTheme.textStyles.main,
-                fontWeight = FontWeight.Bold,
-            )
-            if (summary.isNotBlank()) {
-                Text(
-                    text = summary,
-                    style = MiuixTheme.textStyles.body2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
-    }
-    if (summary.isNotBlank()) {
-        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            if (entry.isCustom) "自定义调休" else "API 调休",
+            style = MiuixTheme.textStyles.body2,
+            color = if (entry.isCustom) Color(0xFF7965AF) else Color(0xFF389E0D),
+        )
     }
 }
 
@@ -2738,21 +2615,10 @@ private fun YearPickerDialog(
             colors = pickerColors,
         )
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onConfirm(year) },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onConfirm(year) },
+        )
     }
 }
 
@@ -2834,21 +2700,10 @@ private fun MiuixDatePickerDialog(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onConfirm(formatIsoDate(year, month, day.coerceIn(1, maxDay))) },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onConfirm(formatIsoDate(year, month, day.coerceIn(1, maxDay))) },
+        )
     }
 }
 
@@ -2894,21 +2749,10 @@ private fun MiuixTimePickerDialog(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onConfirm(hour, minute) },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onConfirm(hour, minute) },
+        )
     }
 }
 
@@ -2923,7 +2767,14 @@ private fun MiuixSectionPickerDialog(
 ) {
     val lower = minSec.coerceAtLeast(1)
     val upper = maxOf(maxSec, initialSec, lower)
-    var section by remember(initialSec, lower, upper) { mutableIntStateOf(initialSec.coerceIn(lower, upper)) }
+    var section by remember(initialSec, lower, upper) {
+        mutableIntStateOf(
+            initialSec.coerceIn(
+                lower,
+                upper
+            )
+        )
+    }
     val pickerColors = NumberPickerDefaults.colors(
         selectedTextColor = MiuixTheme.colorScheme.primary,
         unselectedTextColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.55f),
@@ -2942,21 +2793,10 @@ private fun MiuixSectionPickerDialog(
             colors = pickerColors,
         )
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onConfirm(section) },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onConfirm(section) },
+        )
     }
 }
 
@@ -2969,8 +2809,9 @@ private fun MiuixDurationPickerDialog(
     onConfirm: (Int, String) -> Unit,
 ) {
     val unitEntries = listOf("秒" to "s", "分" to "m", "时" to "h")
-    val initialUnitIndex = unitEntries.indexOfFirst { it.second == normalizeTimeoutUnit(initialUnit) }
-        .takeIf { it >= 0 } ?: 1
+    val initialUnitIndex =
+        unitEntries.indexOfFirst { it.second == normalizeTimeoutUnit(initialUnit) }
+            .takeIf { it >= 0 } ?: 1
     var value by remember(initialValue) { mutableIntStateOf(initialValue.coerceIn(1, 999)) }
     var unitIndex by remember(initialUnitIndex) { mutableIntStateOf(initialUnitIndex) }
     val pickerColors = NumberPickerDefaults.colors(
@@ -3005,21 +2846,10 @@ private fun MiuixDurationPickerDialog(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onConfirm(value, unitEntries[unitIndex].second) },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onConfirm(value, unitEntries[unitIndex].second) },
+        )
     }
 }
 
@@ -3034,7 +2864,14 @@ private fun MiuixMinutePickerDialog(
 ) {
     val lower = minValue.coerceAtLeast(0)
     val upper = maxOf(lower, maxValue)
-    var minute by remember(initialValue, lower, upper) { mutableIntStateOf(initialValue.coerceIn(lower, upper)) }
+    var minute by remember(initialValue, lower, upper) {
+        mutableIntStateOf(
+            initialValue.coerceIn(
+                lower,
+                upper
+            )
+        )
+    }
     val pickerColors = NumberPickerDefaults.colors(
         selectedTextColor = MiuixTheme.colorScheme.primary,
         unselectedTextColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.55f),
@@ -3053,27 +2890,15 @@ private fun MiuixMinutePickerDialog(
             colors = pickerColors,
         )
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onConfirm(minute) },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onConfirm(minute) },
+        )
     }
 }
 
 @Composable
 private fun HolidayEditDialog(
-    activity: MainActivity,
     title: String,
     draft: HolidayDraft,
     onDismiss: () -> Unit,
@@ -3087,45 +2912,31 @@ private fun HolidayEditDialog(
         title = title,
         onDismissRequest = onDismiss,
     ) {
-        Column {
-            SelectorEntryButton(
-                text = "开始日期: ${form.date}",
-                onClick = { showStartPicker = true },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            SelectorEntryButton(
-                text = "结束日期: ${if (form.endDate.isBlank()) "仅当天" else form.endDate}",
-                onClick = { showEndPicker = true },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            top.yukonga.miuix.kmp.basic.TextField(
-                value = form.name,
-                onValueChange = { form = form.copy(name = it) },
-                label = "名称（如：春节、放假）",
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MiuixTheme.textStyles.main.copy(color = MiuixTheme.colorScheme.onSurface),
-                singleLine = true,
-            )
-        }
+        ArrowPreference(
+            title = "开始日期: ${form.date}",
+            onClick = { showStartPicker = true },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        ArrowPreference(
+            title = "结束日期: ${if (form.endDate.isBlank()) "仅当天" else form.endDate}",
+            onClick = { showEndPicker = true },
+            modifier = Modifier.fillMaxWidth(),
+        )
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onSave(form) },
-            )
-        }
+        TextField(
+            value = form.name,
+            onValueChange = { form = form.copy(name = it) },
+            label = "名称（如：春节、放假）",
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MiuixTheme.textStyles.main.copy(color = MiuixTheme.colorScheme.onSurface),
+            singleLine = true,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onSave(form) },
+        )
     }
     if (showStartPicker) {
         MiuixDatePickerDialog(
@@ -3153,7 +2964,6 @@ private fun HolidayEditDialog(
 
 @Composable
 private fun WorkswapEditDialog(
-    activity: MainActivity,
     title: String,
     draft: WorkSwapDraft,
     maxWeek: Int,
@@ -3183,58 +2993,44 @@ private fun WorkswapEditDialog(
         title = title,
         onDismissRequest = onDismiss,
     ) {
-        Column {
-            SelectorEntryButton(
-                text = "选择日期: ${form.date}",
-                onClick = { showDatePicker = true },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            top.yukonga.miuix.kmp.basic.TextField(
-                value = form.name,
-                onValueChange = { form = form.copy(name = it) },
-                label = "名称（如：补周一课）",
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MiuixTheme.textStyles.main.copy(color = MiuixTheme.colorScheme.onSurface),
-                singleLine = true,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("当天按以下周次/星期的课表上课：", style = MiuixTheme.textStyles.body2)
-            Spacer(modifier = Modifier.height(6.dp))
-            OverlayDropdownPreference(
-                title = "周次",
-                items = weekEntries,
-                selectedIndex = form.followWeek.coerceIn(1, maxWeek.coerceAtLeast(1)) - 1,
-                onSelectedIndexChange = {
-                    form = form.copy(followWeek = it + 1)
-                },
-            )
-            OverlayDropdownPreference(
-                title = "星期",
-                items = weekdayEntries,
-                selectedIndex = form.followWeekday.coerceIn(1, 7) - 1,
-                onSelectedIndexChange = {
-                    form = form.copy(followWeekday = it + 1)
-                },
-            )
-        }
+        ArrowPreference(
+            title = "选择日期: ${form.date}",
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+        )
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "取消",
-                minHeight = 50.dp,
-                onClick = onDismiss,
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            TextButton(
-                modifier = Modifier.weight(1f),
-                text = "确定",
-                minHeight = 50.dp,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = { onSave(form) },
-            )
-        }
+        TextField(
+            value = form.name,
+            onValueChange = { form = form.copy(name = it) },
+            label = "名称（如：补周一课）",
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MiuixTheme.textStyles.main.copy(color = MiuixTheme.colorScheme.onSurface),
+            singleLine = true,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("当天按以下周次/星期的课表上课：", style = MiuixTheme.textStyles.body2)
+        Spacer(modifier = Modifier.height(6.dp))
+        OverlayDropdownPreference(
+            title = "周次",
+            items = weekEntries,
+            selectedIndex = form.followWeek.coerceIn(1, maxWeek.coerceAtLeast(1)) - 1,
+            onSelectedIndexChange = {
+                form = form.copy(followWeek = it + 1)
+            },
+        )
+        OverlayDropdownPreference(
+            title = "星期",
+            items = weekdayEntries,
+            selectedIndex = form.followWeekday.coerceIn(1, 7) - 1,
+            onSelectedIndexChange = {
+                form = form.copy(followWeekday = it + 1)
+            },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = { onSave(form) },
+        )
     }
     if (showDatePicker) {
         MiuixDatePickerDialog(
@@ -3245,20 +3041,6 @@ private fun WorkswapEditDialog(
                 form = form.copy(date = it)
                 showDatePicker = false
             },
-        )
-    }
-}
-
-@Composable
-private fun SelectorEntryButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier) {
-        ArrowPreference(
-            title = text,
-            onClick = onClick,
         )
     }
 }
@@ -3289,50 +3071,41 @@ private fun AboutTab(
     modifier: Modifier = Modifier,
     pagePadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    Column(
-        modifier = modifier
-            .verticalScroll(rememberScrollState())
-            .padding(
-                withExtraPadding(
-                    pagePadding,
-                    horizontal = 16.dp,
-                    vertical = 8.dp,
-                )
-            ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        SettingsSection {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                androidx.compose.foundation.Image(
-                    painter = painterResource(R.mipmap.ic_launcher),
-                    contentDescription = null,
-                    modifier = Modifier.size(52.dp),
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "课程表超级岛",
-                        style = MiuixTheme.textStyles.title4,
-                        color = MiuixTheme.colorScheme.onSurfaceContainer,
-                        fontWeight = FontWeight.SemiBold,
+    SettingsPage(modifier = modifier, pagePadding = pagePadding) {
+        item(key = "section_0") {
+            SettingsSection {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = painterResource(R.mipmap.ic_launcher),
+                        contentDescription = null,
+                        modifier = Modifier.size(52.dp),
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = state.version,
-                        style = MiuixTheme.textStyles.body2,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.clickable { activity.uiOpenUrl(RELEASES_URL) },
-                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "课程表超级岛",
+                            style = MiuixTheme.textStyles.title4,
+                            color = MiuixTheme.colorScheme.onSurfaceContainer,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = state.version,
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.clickable { activity.uiOpenUrl(RELEASES_URL) },
+                        )
+                    }
                 }
             }
         }
-        SettingsSection {
-            Column(modifier = Modifier.fillMaxWidth()) {
+        item(key = "section_1") {
+            SettingsSection {
                 ArrowPreference(
                     title = "版本",
                     endActions = { PreferenceValue(state.version) },
@@ -3369,10 +3142,10 @@ private fun AboutTab(
                 )
             }
         }
-        SettingsSection(
-            title = "引用",
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+        item(key = "引用") {
+            SettingsSection(
+                title = "引用",
+            ) {
                 OpenSourceRefs.list.forEach { ref ->
                     ArrowPreference(
                         title = ref.name,
@@ -3382,10 +3155,10 @@ private fun AboutTab(
                 }
             }
         }
-        SettingsSection(
-            title = "致谢",
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+        item(key = "致谢") {
+            SettingsSection(
+                title = "致谢",
+            ) {
                 OpenSourceRefs.acknowledgements.forEach { ref ->
                     ArrowPreference(
                         title = ref.name,
@@ -3395,6 +3168,7 @@ private fun AboutTab(
                 }
             }
         }
+
     }
 }
 

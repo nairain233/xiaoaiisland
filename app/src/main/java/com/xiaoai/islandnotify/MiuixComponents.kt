@@ -24,10 +24,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,7 +44,9 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -160,7 +168,10 @@ internal data class EditDialogSpec(
 @Composable
 internal fun EditValueDialog(spec: EditDialogSpec, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    var draft by rememberSaveable(spec.title, spec.initialValue) { mutableStateOf(spec.initialValue) }
+    var draft by rememberSaveable(
+        spec.title,
+        spec.initialValue
+    ) { mutableStateOf(spec.initialValue) }
     OverlayDialog(show = true, title = spec.title, onDismissRequest = onDismiss) {
         TextField(
             value = draft,
@@ -171,21 +182,16 @@ internal fun EditValueDialog(spec: EditDialogSpec, onDismiss: () -> Unit) {
             ),
         )
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton("取消", modifier = Modifier.weight(1f), onClick = onDismiss)
-            TextButton(
-                text = "确定",
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = {
-                    spec.onConfirm(draft.trim())
-                    spec.successToast?.takeIf { it.isNotBlank() }?.let {
-                        Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-                    }
-                    onDismiss()
-                },
-            )
-        }
+        DialogActions(
+            onDismiss = onDismiss,
+            onConfirm = {
+                spec.onConfirm(draft.trim())
+                spec.successToast?.takeIf { it.isNotBlank() }?.let {
+                    Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                }
+                onDismiss()
+            },
+        )
     }
 }
 
@@ -194,11 +200,12 @@ internal fun RouteScaffold(
     title: String,
     canBack: Boolean,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
     content: @Composable (Modifier, PaddingValues) -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val surface = MiuixTheme.colorScheme.surface
-    val backdrop = if (isRuntimeShaderSupported()) {
+    val backdrop = if (!LocalInspectionMode.current && isRuntimeShaderSupported()) {
         rememberLayerBackdrop {
             drawRect(surface)
             drawContent()
@@ -206,7 +213,7 @@ internal fun RouteScaffold(
     } else null
     val tintAlpha = if (surface.luminance() >= 0.5f) 0.70f else 0.60f
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         topBar = {
             Box(
                 modifier = if (backdrop != null) Modifier.textureBlur(
@@ -235,10 +242,12 @@ internal fun RouteScaffold(
                 )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).union(WindowInsets.ime),
+        contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+            .union(WindowInsets.ime),
     ) { innerPadding ->
         Box(
-            Modifier.fillMaxSize().then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
+            Modifier.fillMaxSize()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
         ) {
             content(
                 Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection)
@@ -272,6 +281,102 @@ internal fun SettingsSection(
 }
 
 @Composable
+internal fun SettingsPage(
+    modifier: Modifier = Modifier,
+    pagePadding: PaddingValues = PaddingValues(0.dp),
+    content: LazyListScope.() -> Unit,
+) {
+    val padding = withExtraPadding(pagePadding, horizontal = 16.dp, vertical = 8.dp)
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(
+            start = padding.calculateStartPadding(LocalLayoutDirection.current),
+            top = padding.calculateTopPadding(),
+            end = padding.calculateEndPadding(LocalLayoutDirection.current),
+            bottom = padding.calculateBottomPadding() + 24.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        content = content,
+    )
+}
+
+internal class DismissibleHints(private val activity: MainActivity) {
+    private val dismissed = mutableStateMapOf<String, Boolean>()
+
+    fun isVisible(key: String): Boolean = !(dismissed[key] ?: activity.uiIsHintDismissed(key))
+
+    fun dismiss(key: String) {
+        activity.uiSetHintDismissed(key, true)
+        dismissed[key] = true
+    }
+}
+
+@Composable
+internal fun rememberDismissibleHints(activity: MainActivity): DismissibleHints {
+    val refreshTick by ComposeRefreshBus.tick.collectAsState()
+    return remember(activity, refreshTick) { DismissibleHints(activity) }
+}
+
+internal fun LazyListScope.dismissibleHint(hints: DismissibleHints, key: String, text: String) {
+    if (hints.isVisible(key)) {
+        item(key = key) {
+            InformationCard(text = text, onClose = { hints.dismiss(key) })
+        }
+    }
+}
+
+@Composable
+internal fun DialogActions(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    confirmText: String = "确定",
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TextButton("取消", modifier = Modifier.weight(1f), minHeight = 50.dp, onClick = onDismiss)
+        TextButton(
+            text = confirmText,
+            modifier = Modifier.weight(1f),
+            minHeight = 50.dp,
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+            onClick = onConfirm,
+        )
+    }
+}
+
+@Composable
+internal fun EditableEntry(
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    BasicComponent(
+        bottomAction = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TextButton(
+                    "编辑",
+                    modifier = Modifier.weight(1f),
+                    minHeight = 48.dp,
+                    onClick = onEdit
+                )
+                TextButton(
+                    text = "删除",
+                    modifier = Modifier.weight(1f),
+                    minHeight = 48.dp,
+                    colors = ButtonDefaults.textButtonColors(
+                        color = Color(0xFFD32F2F),
+                        disabledColor = Color(0x59D32F2F),
+                        textColor = Color.White,
+                        disabledTextColor = Color(0xB3FFFFFF),
+                    ),
+                    onClick = onDelete,
+                )
+            }
+        },
+        content = content,
+    )
+}
+
+@Composable
 internal fun ConfirmationDialog(
     show: Boolean,
     title: String,
@@ -280,16 +385,17 @@ internal fun ConfirmationDialog(
     onDismissRequest: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    OverlayDialog(show = show, title = title, summary = summary, onDismissRequest = onDismissRequest) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton("取消", modifier = Modifier.weight(1f), onClick = onDismissRequest)
-            TextButton(
-                text = confirmText,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                onClick = onConfirm,
-            )
-        }
+    OverlayDialog(
+        show = show,
+        title = title,
+        summary = summary,
+        onDismissRequest = onDismissRequest
+    ) {
+        DialogActions(
+            onDismiss = onDismissRequest,
+            onConfirm = onConfirm,
+            confirmText = confirmText
+        )
     }
 }
 
@@ -309,15 +415,28 @@ internal fun withExtraPadding(
 
 @Composable
 internal fun InformationCard(text: String, onClose: (() -> Unit)? = null) {
-    Card(modifier = Modifier.padding(vertical = 6.dp)) {
+    val foreground = colorResource(R.color.hint_foreground)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.defaultColors(
+            color = colorResource(R.color.hint_background),
+            contentColor = foreground,
+        ),
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            Modifier.fillMaxWidth().heightIn(min = 60.dp)
+                .padding(
+                    start = 16.dp,
+                    end = if (onClose == null) 16.dp else 8.dp,
+                    top = 12.dp,
+                    bottom = 12.dp
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text, modifier = Modifier.weight(1f), color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            Text(text, modifier = Modifier.weight(1f), color = foreground)
             if (onClose != null) {
-                IconButton(onClick = onClose) {
-                    Icon(MiuixIcons.Basic.Close, contentDescription = "关闭提示")
+                IconButton(modifier = Modifier.size(48.dp), onClick = onClose) {
+                    Icon(MiuixIcons.Basic.Close, contentDescription = "关闭提示", tint = foreground)
                 }
             }
         }

@@ -352,20 +352,9 @@ tasks.register("generateOpenSourceRefs") {
             refs.add(resolvePomMetadata(c.group, c.name, c.version))
         }
         refs = refs.unique { "${it.name}|${it.license}|${it.url}" }
-        def acknowledgements = [
-                [
-                        name: "HowieHChen/XiaomiHelper",
-                        license: "GPL-3.0",
-                        url: "https://github.com/HowieHChen/XiaomiHelper",
-                ]
-        ]
-
         outFile.parentFile.mkdirs()
         def esc = { String s -> (s ?: "").replace("\\", "\\\\").replace("\"", "\\\"") }
         def entries = refs.collect { ref ->
-            "        OpenSourceRef(\"${esc(ref.name)}\", \"${esc(ref.license)}\", \"${esc(ref.url)}\")"
-        }.join(",\n")
-        def ackEntries = acknowledgements.collect { ref ->
             "        OpenSourceRef(\"${esc(ref.name)}\", \"${esc(ref.license)}\", \"${esc(ref.url)}\")"
         }.join(",\n")
         def content = """package com.xiaoai.islandnotify
@@ -379,9 +368,6 @@ data class OpenSourceRef(
 object OpenSourceRefs {
     val list = listOf(
 ${entries}
-    )
-    val acknowledgements = listOf(
-${ackEntries}
     )
 }
 """

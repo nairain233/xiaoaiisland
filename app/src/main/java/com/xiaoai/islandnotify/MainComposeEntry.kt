@@ -3155,20 +3155,6 @@ private fun AboutTab(
                 }
             }
         }
-        item(key = "致谢") {
-            SettingsSection(
-                title = "致谢",
-            ) {
-                OpenSourceRefs.acknowledgements.forEach { ref ->
-                    ArrowPreference(
-                        title = ref.name,
-                        summary = "${ref.license} | UI参考",
-                        onClick = { activity.uiOpenUrl(ref.link) },
-                    )
-                }
-            }
-        }
-
     }
 }
 

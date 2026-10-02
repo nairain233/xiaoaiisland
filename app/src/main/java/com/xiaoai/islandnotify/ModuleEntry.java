@@ -1,9 +1,6 @@
 package com.xiaoai.islandnotify;
 
-import android.os.Build;
-
 import androidx.annotation.NonNull;
-import androidx.annotation.RequiresApi;
 
 import com.xiaoai.islandnotify.modernhook.XposedBridge;
 
@@ -28,7 +25,6 @@ public class ModuleEntry extends XposedModule {
     }
 
     @Override
-    @RequiresApi(Build.VERSION_CODES.Q)
     public void onPackageLoaded(@NonNull PackageLoadedParam param) {
         XposedBridge.init(this);
         String packageName = param.getPackageName();

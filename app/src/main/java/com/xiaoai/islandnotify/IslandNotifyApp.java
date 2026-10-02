@@ -1,6 +1,7 @@
 package com.xiaoai.islandnotify;
 
 import android.app.Application;
+import androidx.annotation.NonNull;
 
 import io.github.libxposed.service.XposedService;
 import io.github.libxposed.service.XposedServiceHelper;
@@ -16,7 +17,7 @@ public class IslandNotifyApp extends Application {
         super.onCreate();
         XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
             @Override
-            public void onServiceBind(XposedService service) {
+            public void onServiceBind(@NonNull XposedService service) {
                 sService = service;
                 sFrameworkActive = true;
                 int apiVersion = 0;
@@ -31,7 +32,7 @@ public class IslandNotifyApp extends Application {
             }
 
             @Override
-            public void onServiceDied(XposedService service) {
+            public void onServiceDied(@NonNull XposedService service) {
                 sService = null;
                 sFrameworkActive = false;
                 sFrameworkDesc = "";

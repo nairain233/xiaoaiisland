@@ -15,7 +15,7 @@ import top.yukonga.miuix.kmp.theme.ThemeController
     uiMode = Configuration.UI_MODE_NIGHT_YES,
 )
 @Preview(name = "假期列表 · 1.5 倍字体", widthDp = 320, heightDp = 2400, fontScale = 1.5f)
-@Preview(name = "假期列表 · 2 倍字体", widthDp = 320, heightDp = 3200, fontScale = 2f)
+@Preview(name = "假期列表 · 2 倍字体", widthDp = 320, heightDp = 3000, fontScale = 2f)
 @Preview(name = "假期列表 · 宽屏", widthDp = 600, heightDp = 1000)
 @Composable
 private fun HolidayListsPreview() {

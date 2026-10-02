@@ -80,7 +80,7 @@ public class WakeupHook {
         }
 
         mDbObserver = new android.os.FileObserver(
-                dbDir.getAbsolutePath(),
+                dbDir,
                 android.os.FileObserver.MOVED_TO
                         | android.os.FileObserver.CLOSE_WRITE
                         | android.os.FileObserver.MODIFY) {
@@ -107,7 +107,7 @@ public class WakeupHook {
             return;
         }
         mPrefsObserver = new android.os.FileObserver(
-                prefsDir.getAbsolutePath(),
+                prefsDir,
                 android.os.FileObserver.MOVED_TO
                         | android.os.FileObserver.CLOSE_WRITE) {
             @Override

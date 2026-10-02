@@ -2,6 +2,7 @@ package com.xiaoai.islandnotify;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import java.io.File;
 import java.util.Collections;
@@ -141,14 +142,22 @@ final class PrefsAccess {
         Map<String, ?> all = local.getAll();
         if (all != null && !all.isEmpty()) return;
         try {
-            ctx.deleteSharedPreferences(prefsName);
-        } catch (Throwable ignored) {}
+            if (ctx.deleteSharedPreferences(prefsName)) return;
+        } catch (RuntimeException e) {
+            Log.w("IslandNotify", "删除空偏好失败，尝试清理残留：" + prefsName, e);
+        }
         try {
             File dir = new File(ctx.getApplicationInfo().dataDir, "shared_prefs");
             File xml = new File(dir, prefsName + ".xml");
             File bak = new File(dir, prefsName + ".xml.bak");
-            if (xml.exists()) xml.delete();
-            if (bak.exists()) bak.delete();
-        } catch (Throwable ignored) {}
+            if (xml.exists() && !xml.delete()) {
+                Log.w("IslandNotify", "无法删除空偏好文件：" + xml);
+            }
+            if (bak.exists() && !bak.delete()) {
+                Log.w("IslandNotify", "无法删除空偏好备份：" + bak);
+            }
+        } catch (RuntimeException e) {
+            Log.w("IslandNotify", "清理空偏好残留失败：" + prefsName, e);
+        }
     }
 }

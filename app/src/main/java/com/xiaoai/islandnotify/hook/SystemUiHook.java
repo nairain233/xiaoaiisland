@@ -19,6 +19,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Constructor;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -665,7 +666,7 @@ public class SystemUiHook {
         if (cl == null) return false;
         String s = String.valueOf(cl);
         if (TextUtils.isEmpty(s)) return false;
-        String lower = s.toLowerCase();
+        String lower = s.toLowerCase(Locale.ROOT);
         return lower.contains("sysui_component")
                 || lower.contains("miui.systemui.plugin")
                 || lower.contains("systemui_component");
@@ -1167,9 +1168,7 @@ public class SystemUiHook {
             content.setLineSpacing(title.getLineSpacingExtra(), title.getLineSpacingMultiplier());
             content.setMinHeight(title.getMinHeight());
             content.setMinWidth(title.getMinWidth());
-            if (android.os.Build.VERSION.SDK_INT >= 28) {
-                content.setLineHeight(title.getLineHeight());
-            }
+            content.setLineHeight(title.getLineHeight());
             ViewGroup.LayoutParams lp = content.getLayoutParams();
             ViewGroup.LayoutParams titleLp = title.getLayoutParams();
             if (lp instanceof ViewGroup.MarginLayoutParams) {
@@ -1196,6 +1195,8 @@ public class SystemUiHook {
         }
     }
 
+    // 样式由宿主或其插件定义，模块不能使用自身 R 引用。
+    @android.annotation.SuppressLint("DiscouragedApi")
     private void applyExactIslandTitleStyle(TextView target) {
         if (target == null) return;
         try {
@@ -1209,7 +1210,7 @@ public class SystemUiHook {
                 styleId = res.getIdentifier("IslandTitleStyle", "style", "miui.systemui.plugin");
             }
             if (styleId != 0) {
-                target.setTextAppearance(ctx, styleId);
+                target.setTextAppearance(styleId);
             }
         } catch (Throwable ignore) {
         }
@@ -1348,6 +1349,8 @@ public class SystemUiHook {
         }
     }
 
+    // 尺寸资源属于宿主，名称查找用于兼容不同系统版本。
+    @android.annotation.SuppressLint("DiscouragedApi")
     private int getDimenPx(android.content.Context ctx, String name) {
         if (ctx == null || TextUtils.isEmpty(name)) return 0;
         try {
@@ -1472,7 +1475,7 @@ public class SystemUiHook {
         if (tv == null) return false;
         int id = tv.getId();
         if (id != View.NO_ID) {
-            String idName = safeIdName(tv, id).toLowerCase();
+            String idName = safeIdName(tv, id).toLowerCase(Locale.ROOT);
             if (idName.contains("small_subtitle")) return true;
             if (idName.contains("small_sub_title")) return true;
             if (idName.contains("focus_small_subtitle")) return true;
@@ -1487,7 +1490,7 @@ public class SystemUiHook {
         if (tv == null) return false;
         int id = tv.getId();
         if (id == View.NO_ID) return false;
-        String idName = safeIdName(tv, id).toLowerCase();
+        String idName = safeIdName(tv, id).toLowerCase(Locale.ROOT);
         if (idName.contains("small_subtitle") || idName.contains("sub_title") || idName.contains("subtitle")) {
             return false;
         }

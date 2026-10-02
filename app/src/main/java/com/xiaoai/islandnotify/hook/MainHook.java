@@ -9,14 +9,12 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.media.AudioManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.net.Uri;
 import android.service.notification.StatusBarNotification;
 import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
-import org.json.JSONObject;
 
 import com.xiaoai.islandnotify.modernhook.XC_MethodHook;
 import com.xiaoai.islandnotify.modernhook.XposedBridge;
@@ -1155,7 +1153,14 @@ public class MainHook {
                 Intent twIntent = new Intent(TotalWeekReceiver.ACTION_UPDATE_TOTAL_WEEK);
                 twIntent.setPackage(MODULE_PKG);
                 twIntent.putExtra(KEY_COURSE_TOTAL_WEEK, totalWeek);
-                ctx.sendBroadcast(twIntent);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    // 由系统提供宿主身份，接收端不信任 Intent 中自报的发送方。
+                    android.app.BroadcastOptions options = android.app.BroadcastOptions.makeBasic()
+                            .setShareIdentityEnabled(true);
+                    ctx.sendBroadcast(twIntent, null, options.toBundle());
+                } else {
+                    ctx.sendBroadcast(twIntent);
+                }
             }
             int reminderMinutes = readConfigInt(prefs, KEY_REMINDER_MINUTES, DEFAULT_REMINDER_MINUTES);
             long nowMs = System.currentTimeMillis();
@@ -1748,16 +1753,9 @@ public class MainHook {
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * 根据今日课表计算上午/下午首节课时间，广播给 DeskClockHook。
-     * <ul>
-     *   <li>若上午/下午叫醒均关闭，则发 clear_only 清除旧闹钟。</li>
-     *   <li>目标时间已过则忽略（不设）。</li>
-     *   <li>每次调用均先清除之前创建的闹钟再重建（在 DeskClockHook 侧）。</li>
-     * </ul>
-     */
-    /**
      * 将今日课程原始数据 + 用户叫醒配置打包发给 deskclock 进程。
      * 所有课程解析、判断是否有课、决定时间的逻辑全部由 DeskClockHook 在 deskclock 进程内完成。
+     * 叫醒关闭时发送 clear_only；旧闹钟清理和目标时间校验由 DeskClockHook 处理。
      */
     private void scheduleTodayWakeupAlarms(Context ctx) {
         if (!sWakeupMorningEnabled && !sWakeupAfternoonEnabled) {
@@ -1915,10 +1913,10 @@ public class MainHook {
         if (mCourseDataObserver != null) return; // 已注册，防重复
 
         // voiceassist 自有数据目录下的 shared_prefs/
-        String dirPath = ctx.getFilesDir().getParent() + "/shared_prefs";
+        java.io.File prefsDir = new java.io.File(ctx.getApplicationInfo().dataDir, "shared_prefs");
 
         mCourseDataObserver = new android.os.FileObserver(
-                dirPath,
+                prefsDir,
                 android.os.FileObserver.MOVED_TO | android.os.FileObserver.CLOSE_WRITE) {
             @Override
             public void onEvent(int event, String path) {
@@ -1951,7 +1949,7 @@ public class MainHook {
             }
         };
         mCourseDataObserver.startWatching();
-        XposedBridge.log(TAG + ": CourseData FileObserver 已启动，监控目录: " + dirPath);
+        XposedBridge.log(TAG + ": CourseData FileObserver 已启动，监控目录: " + prefsDir.getAbsolutePath());
     }
 
     /**
@@ -1993,13 +1991,12 @@ public class MainHook {
     // 内部 Hook 实现
     // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * @param notifArgIndex Notification 对象在 args 数组中的下标
-     */
+    /** 拦截通知发送，并按课程内容注入超级岛参数。 */
     private class NotifyHook extends XC_MethodHook {
 
         private final int notifArgIndex;
 
+        /** @param notifArgIndex Notification 对象在 args 数组中的下标 */
         NotifyHook(int notifArgIndex) {
             this.notifArgIndex = notifArgIndex;
         }
@@ -2245,15 +2242,14 @@ public class MainHook {
     }
 
     /**
-     * 构建并发送更新后的岛通知。
-     */
-    /**
      * 岛状态更新专用渠道 ID（IMPORTANCE_LOW：无声无震，渠道级保证，不依赖 FLAG_ONLY_ALERT_ONCE）。
      * 与 voiceassist 自带的 COURSE_SCHEDULER_REMINDER_sound 完全独立，不会被其 importance 覆盖。
      */
     private static final String ISLAND_UPDATE_CHANNEL = "xiaoai_island_update_silent";
 
     /**
+     * 构建并发送更新后的岛通知。
+     *
      * @param automationAlarmId 供"逃课/自动化取消"识别的规范 alarmId，随 ACTION_ISLAND_UPDATE
      *                          闹钟持久化传入；展示 id 被连续课程换发成 newId 后仍保持一致。
      */
@@ -2554,6 +2550,8 @@ public class MainHook {
         }
     }
 
+    // 仅探测 edit() 是否可用，不修改键，也不提交空事务。
+    @android.annotation.SuppressLint("CommitPrefEdits")
     private boolean isWritablePrefs(SharedPreferences prefs) {
         if (prefs == null) return false;
         try {

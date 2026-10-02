@@ -98,7 +98,7 @@ public class ShiguangHook {
         File dbDir = dbFile == null ? null : dbFile.getParentFile();
         if (dbDir == null || !dbDir.exists()) return;
         mDbObserver = new android.os.FileObserver(
-                dbDir.getAbsolutePath(),
+                dbDir,
                 android.os.FileObserver.MOVED_TO
                         | android.os.FileObserver.CLOSE_WRITE
                         | android.os.FileObserver.MODIFY) {
@@ -121,7 +121,7 @@ public class ShiguangHook {
         File dir = store.getParentFile();
         if (dir == null || !dir.exists()) return;
         mStoreObserver = new android.os.FileObserver(
-                dir.getAbsolutePath(),
+                dir,
                 android.os.FileObserver.MOVED_TO
                         | android.os.FileObserver.CLOSE_WRITE
                         | android.os.FileObserver.MODIFY) {

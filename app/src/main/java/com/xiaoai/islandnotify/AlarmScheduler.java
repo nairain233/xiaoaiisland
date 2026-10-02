@@ -4,6 +4,7 @@ import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 
 final class AlarmScheduler {
 
@@ -18,6 +19,8 @@ final class AlarmScheduler {
         return intent;
     }
 
+    // 使用宿主 Context；权限由宿主声明，并在运行时检查，模块清单无法代表宿主权限。
+    @android.annotation.SuppressLint("MissingPermission")
     static boolean scheduleAlarmClock(Context ctx,
                                       Intent serviceIntent,
                                       int requestCode,
@@ -29,14 +32,24 @@ final class AlarmScheduler {
         if (ctx == null || serviceIntent == null || showAction == null || showPackage == null) return false;
         AlarmManager am = ctx.getSystemService(AlarmManager.class);
         if (am == null) return false;
-        PendingIntent servicePi = PendingIntent.getService(ctx, requestCode, serviceIntent, SERVICE_FLAGS);
-        PendingIntent showPi = PendingIntent.getBroadcast(
-                ctx,
-                showRequestCode,
-                new Intent(showAction).setPackage(showPackage),
-                showFlags(showUpdateCurrent));
-        am.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAtMillis, showPi), servicePi);
-        return true;
+        try {
+            if (!am.canScheduleExactAlarms()) {
+                Log.w("IslandNotify", "精确闹钟权限不可用：" + ctx.getPackageName());
+                return false;
+            }
+            PendingIntent servicePi = PendingIntent.getService(ctx, requestCode, serviceIntent, SERVICE_FLAGS);
+            PendingIntent showPi = PendingIntent.getBroadcast(
+                    ctx,
+                    showRequestCode,
+                    new Intent(showAction).setPackage(showPackage),
+                    showFlags(showUpdateCurrent));
+            am.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAtMillis, showPi), servicePi);
+            return true;
+        } catch (SecurityException e) {
+            // 检查通过后权限仍可能被撤销，不将失败的调度记作成功。
+            Log.w("IslandNotify", "精确闹钟调度被拒绝：" + ctx.getPackageName(), e);
+            return false;
+        }
     }
 
     static void cancelAlarmClock(Context ctx,

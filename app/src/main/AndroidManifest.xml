@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <queries>
@@ -13,12 +14,12 @@
         android:description="@string/app_description"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@style/Theme.XiaoaiIsland">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:enableOnBackInvokedCallback="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -30,7 +31,6 @@
         <activity
             android:name=".LegacyMainActivity"
             android:exported="false"
-            android:label="@string/app_name"
             android:enableOnBackInvokedCallback="false"
             android:windowSoftInputMode="adjustResize" />
 
@@ -46,7 +46,9 @@
             </intent-filter>
         </activity-alias>
 
-        <receiver android:name=".TotalWeekReceiver" android:exported="true">
+        <!-- 宿主以自身 UID 发送周数；签名权限或关闭导出会阻断现有同步，接收端校验载荷与可用身份。 -->
+        <receiver android:name=".TotalWeekReceiver" android:exported="true"
+            tools:ignore="ExportedReceiver">
             <intent-filter>
                 <action android:name="com.xiaoai.islandnotify.ACTION_UPDATE_TOTAL_WEEK" />
             </intent-filter>

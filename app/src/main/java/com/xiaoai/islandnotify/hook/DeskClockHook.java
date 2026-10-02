@@ -6,7 +6,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.Uri;
-import android.os.Build;
 import androidx.core.content.ContextCompat;
 
 import java.lang.reflect.Field;
@@ -227,11 +226,13 @@ public class DeskClockHook {
      * 通过反射创建一个系统闹钟并写入数据库。
      * @return 新闹钟的 id（>0），失败时返回 -1
      */
+    // 闹钟模型来自宿主 APK，必须通过宿主 ClassLoader 定位。
+    @android.annotation.SuppressLint("PrivateApi")
     private long createAlarm(Context ctx, ClassLoader cl,
                              int hour, int minute, String label) {
         try {
             Class<?> alarmCls = Class.forName("com.android.deskclock.Alarm", false, cl);
-            Object   alarm    = alarmCls.newInstance();
+            Object   alarm    = alarmCls.getDeclaredConstructor().newInstance();
 
             setField(alarm, "hour",          hour);
             setField(alarm, "minutes",       minute);
@@ -388,6 +389,7 @@ public class DeskClockHook {
     }
 
     /** 反射获取 Alarm.CONTENT_URI，失败则返回硬编码 URI */
+    @android.annotation.SuppressLint("PrivateApi")
     private Uri getAlarmContentUri(ClassLoader cl) {
         try {
             Class<?> alarmCls = Class.forName("com.android.deskclock.Alarm", false, cl);

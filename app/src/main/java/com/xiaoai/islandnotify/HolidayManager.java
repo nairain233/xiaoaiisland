@@ -6,10 +6,10 @@ import android.content.SharedPreferences;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.DateTimeException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 public class HolidayManager {
 
@@ -238,13 +238,12 @@ public class HolidayManager {
         return merged;
     }
 
-    private static boolean isAdjacentDay(String d1, String d2) {
+    static boolean isAdjacentDay(String d1, String d2) {
+        if (d1 == null || d2 == null) return false;
         try {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
-            long t1 = sdf.parse(d1).getTime();
-            long t2 = sdf.parse(d2).getTime();
-            return t2 - t1 == 86400000L;
-        } catch (Exception e) {
+            // 按日历日期比较，不受默认时区和夏令时导致的日长变化影响。
+            return LocalDate.parse(d1).plusDays(1).equals(LocalDate.parse(d2));
+        } catch (DateTimeException e) {
             return false;
         }
     }

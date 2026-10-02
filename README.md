@@ -176,11 +176,22 @@ xiaoailand/
 │       │   ├── MainComposeEntry.kt         # Miuix 页面与配置交互
 │       │   ├── MiuixAppShell.kt            # 主题、导航与双栏宿主
 │       │   ├── MiuixComponents.kt          # 页面框架、提示与表单弹窗
-│       │   ├── hook/                       # Hook 实现（MainHook/SystemUiHook/DeskClockHook）
-│       │   ├── integration/                # 调用小爱内部接口：静音/勿扰切换与课表主动刷新
-│       │   ├── schedule/                   # 调度与超时配置
-│       │   ├── config/                     # 默认值、迁移、配置读写
-│       │   ├── holiday/                    # 节假日逻辑
+│       │   ├── hook/                       # com.xiaoai.islandnotify.hook 子包，集中存放 Hook
+│       │   │   ├── MainHook.java           # 课程通知与调度 Hook
+│       │   │   ├── SystemUiHook.java       # 超级岛显示 Hook
+│       │   │   ├── DeskClockHook.java      # 自动叫醒 Hook
+│       │   │   ├── WakeupHook.java         # Wakeup 课表同步
+│       │   │   ├── ShiguangHook.java       # 拾光课表同步
+│       │   │   └── IslandContentBuilder.java # 超级岛通知内容
+│       │   ├── MiuiSettingsInvoker.java    # 小爱静音/勿扰接口
+│       │   ├── TimeTableHelperInvoker.java # 小爱课表刷新接口
+│       │   ├── AlarmScheduler.java         # 宿主精确闹钟
+│       │   ├── CourseScheduleParser.java   # 课程解析
+│       │   ├── TimeoutConfig.java          # 超时配置
+│       │   ├── ConfigDefaults.java         # 默认配置
+│       │   ├── ConfigMigration.java        # 配置迁移
+│       │   ├── PrefsAccess.java            # 配置读写
+│       │   ├── HolidayManager.java         # 节假日逻辑
 │       │   └── modernhook/                 # libxposed API 101 适配封装
 │       ├── resources/META-INF/xposed/
 │       │   ├── java_init.list
@@ -201,3 +212,10 @@ xiaoailand/
 └── README.md
 ```
 
+## 静态检查与兼容性
+
+以下任务不会递增 `version.properties` 中的构建计数：
+
+```bash
+./gradlew :app:lintDebug :app:testDebugUnitTest :app:compileDebugJavaWithJavac :app:compileDebugKotlin
+```

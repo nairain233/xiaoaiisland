@@ -201,9 +201,9 @@ public final class MiuiSettingsInvoker {
      * 通过反射遍历 BaseDexClassLoader 内部的 DexFile，枚举所有类名。
      * 兼容 API 21 – 34（DexFile 已废弃但仍可反射访问）。
      */
-    @SuppressWarnings("unchecked")
     private static java.util.List<String> enumerateClassNames(ClassLoader cl) {
         java.util.List<String> result = new java.util.ArrayList<>();
+        if (cl == null) return result;
         try {
             // BaseDexClassLoader.pathList -> DexPathList.dexElements[] -> element.dexFile
             Field pathListField = findField(cl.getClass(), "pathList");
@@ -214,13 +214,16 @@ public final class MiuiSettingsInvoker {
             if (pathListField == null) return result;
             pathListField.setAccessible(true);
             Object pathList = pathListField.get(cl);
+            if (pathList == null) return result;
 
             Field elementsField = findField(pathList.getClass(), "dexElements");
             if (elementsField == null) return result;
             elementsField.setAccessible(true);
-            Object[] elements = (Object[]) elementsField.get(pathList);
+            Object rawElements = elementsField.get(pathList);
+            if (!(rawElements instanceof Object[] elements)) return result;
 
             for (Object element : elements) {
+                if (element == null) continue;
                 // element.dexFile (dalvik.system.DexFile)
                 Field dexFileField = findField(element.getClass(), "dexFile");
                 if (dexFileField == null) continue;
@@ -229,9 +232,11 @@ public final class MiuiSettingsInvoker {
                 if (dexFile == null) continue;
 
                 Method entriesMethod = dexFile.getClass().getMethod("entries");
-                Enumeration<String> entries = (Enumeration<String>) entriesMethod.invoke(dexFile);
+                Object rawEntries = entriesMethod.invoke(dexFile);
+                if (!(rawEntries instanceof Enumeration<?> entries)) continue;
                 while (entries.hasMoreElements()) {
-                    result.add(entries.nextElement());
+                    Object entry = entries.nextElement();
+                    if (entry instanceof String name) result.add(name);
                 }
             }
         } catch (Throwable t) {
@@ -253,12 +258,7 @@ public final class MiuiSettingsInvoker {
         try {
             android.content.pm.PackageInfo pi =
                     ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                return pi.getLongVersionCode();
-            } else {
-                //noinspection deprecation
-                return pi.versionCode;
-            }
+            return pi.getLongVersionCode();
         } catch (Exception e) {
             return 0;
         }

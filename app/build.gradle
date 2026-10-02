@@ -1,4 +1,5 @@
 import groovy.xml.XmlSlurper
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id 'com.android.application'
@@ -226,14 +227,16 @@ android {
         targetCompatibility JavaVersion.VERSION_21
     }
 
-    kotlinOptions {
-        jvmTarget = '21'
-    }
-
     packaging {
         resources {
             merges += ["META-INF/xposed/*"]
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_21
     }
 }
 
@@ -273,14 +276,14 @@ dependencies {
 
 // 强制禁用APK列表文件重定向任务
 afterEvaluate {
-    tasks.matching { it.name.startsWith('create') && it.name.endsWith('ApkListingFileRedirect') }.all {
+    tasks.matching { it.name.startsWith('create') && it.name.endsWith('ApkListingFileRedirect') }.configureEach {
         enabled = false
         println "Disabled task: ${it.name}"
     }
 }
 
-def openSourceGeneratedDir = file("$buildDir/generated/source/opensourcerefs")
-android.sourceSets.main.java.srcDir(openSourceGeneratedDir)
+def openSourceGeneratedDir = layout.buildDirectory.dir("generated/source/opensourcerefs")
+android.sourceSets.main.java.srcDir(openSourceGeneratedDir.get().asFile)
 
 def openSourceFallbackUrl = { String g, String n, String v ->
     return "https://mvnrepository.com/artifact/${g}/${n}/${v}"
@@ -335,7 +338,7 @@ def collectExternalDeps = { Project p, List<String> confNames, Map<String, Map<S
 }
 
 tasks.register("generateOpenSourceRefs") {
-    def outFile = file("$openSourceGeneratedDir/com/xiaoai/islandnotify/OpenSourceRefs.kt")
+    def outFile = openSourceGeneratedDir.get().file("com/xiaoai/islandnotify/OpenSourceRefs.kt").asFile
     outputs.file(outFile)
     doLast {
         Map<String, Map<String, String>> coords = new LinkedHashMap<>()

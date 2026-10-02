@@ -26,7 +26,6 @@ final class ConfigMigration {
                 String stageKey = baseKey + suffix;
                 if (safeString(sp.getString(stageKey, "")).isEmpty()) {
                     ed.putString(stageKey, old);
-                    changed = true;
                 }
             }
             ed.remove(baseKey);

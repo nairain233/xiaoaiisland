@@ -11,6 +11,7 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.activity.ComponentActivity;
+import androidx.annotation.NonNull;
 
 
 import org.json.JSONArray;
@@ -280,7 +281,7 @@ public class MainActivity extends ComponentActivity {
         getSharedPreferences(PREFS_UI_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_UI_MONET_ENABLED, enabled)
-                .commit();
+                .apply();
     }
 
     boolean uiIsPredictiveBackEnabled() {
@@ -292,7 +293,7 @@ public class MainActivity extends ComponentActivity {
         getSharedPreferences(PREFS_UI_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_UI_PREDICTIVE_BACK_ENABLED, enabled)
-                .commit();
+                .apply();
         recreate();
     }
 
@@ -484,17 +485,16 @@ public class MainActivity extends ComponentActivity {
             if (all == null || all.isEmpty()) return;
             if (sp.getBoolean(KEY_MIGRATION_DONE, false)) {
                 SharedPreferences.Editor ed = sp.edit();
-                boolean changed = false;
-                changed |= ConfigMigration.purgeLegacyConfigKeys(ed);
+                boolean changed = ConfigMigration.purgeLegacyConfigKeys(ed);
                 changed |= migrateConfigV2Once(sp, ed);
                 if (changed) ed.apply();
                 return;
             }
             SharedPreferences.Editor ed = sp.edit();
-            boolean changed = ConfigMigration.migrateBaseConfig(sp, ed, ConfigDefaults.KEY_NOTIF_DISMISS_TRIGGER);
-            changed |= migrateLegacyActiveTimerSwitch(sp, ed);
-            changed |= ConfigMigration.purgeLegacyConfigKeys(ed);
-            changed |= migrateConfigV2Once(sp, ed);
+            ConfigMigration.migrateBaseConfig(sp, ed, ConfigDefaults.KEY_NOTIF_DISMISS_TRIGGER);
+            migrateLegacyActiveTimerSwitch(sp, ed);
+            ConfigMigration.purgeLegacyConfigKeys(ed);
+            migrateConfigV2Once(sp, ed);
             ed.putBoolean(KEY_MIGRATION_DONE, true);
             ed.apply();
         } catch (Throwable t) {
@@ -505,23 +505,20 @@ public class MainActivity extends ComponentActivity {
     private boolean migrateLegacyActiveTimerSwitch(SharedPreferences sp, SharedPreferences.Editor ed) {
         if (!sp.contains(KEY_ACTIVE_COUNTDOWN_TO_END)) return false;
         boolean oldCountdown = sp.getBoolean(KEY_ACTIVE_COUNTDOWN_TO_END, false);
-        boolean changed = false;
         String keyHintContentActive = "tpl_hint_content_active";
         String keyHintTitleActive = "tpl_hint_title_active";
         if (safeString(sp.getString(keyHintContentActive, "")).isEmpty()) {
             ed.putString(keyHintContentActive, oldCountdown
                     ? "\u8ddd\u79bb\u4e0b\u8bfe {\u5012\u8ba1\u65f6}"
                     : "\u5df2\u7ecf\u4e0a\u8bfe {\u6b63\u8ba1\u65f6}");
-            changed = true;
         }
         if (safeString(sp.getString(keyHintTitleActive, "")).isEmpty()) {
             ed.putString(keyHintTitleActive, oldCountdown
                     ? "{\u5012\u8ba1\u65f6}"
                     : "{\u6b63\u8ba1\u65f6}");
-            changed = true;
         }
         ed.remove(KEY_ACTIVE_COUNTDOWN_TO_END);
-        return true || changed;
+        return true;
     }
 
     private boolean migrateConfigV2Once(SharedPreferences sp, SharedPreferences.Editor ed) {
@@ -556,7 +553,7 @@ public class MainActivity extends ComponentActivity {
             }
             service.requestScope(required, new XposedService.OnScopeEventListener() {
                 @Override
-                public void onScopeRequestApproved(List<String> approved) {
+                public void onScopeRequestApproved(@NonNull List<String> approved) {
                     runOnUiThread(() -> Toast.makeText(
                             MainActivity.this,
                             "\u4f5c\u7528\u57df\u5df2\u6388\u6743: " + approved,
@@ -565,7 +562,7 @@ public class MainActivity extends ComponentActivity {
                 }
 
                 @Override
-                public void onScopeRequestFailed(String message) {
+                public void onScopeRequestFailed(@NonNull String message) {
                     runOnUiThread(() -> Toast.makeText(
                             MainActivity.this,
                             "\u4f5c\u7528\u57df\u8bf7\u6c42\u5931\u8d25: " + message,
@@ -597,14 +594,14 @@ public class MainActivity extends ComponentActivity {
             Toast.makeText(this, "请授权作用域：" + targetPackage, Toast.LENGTH_SHORT).show();
             service.requestScope(Collections.singletonList(targetPackage), new XposedService.OnScopeEventListener() {
                 @Override
-                public void onScopeRequestApproved(List<String> approved) {
-                    if (approved != null && approved.contains(targetPackage) && onApproved != null) {
+                public void onScopeRequestApproved(@NonNull List<String> approved) {
+                    if (approved.contains(targetPackage) && onApproved != null) {
                         runOnUiThread(onApproved);
                     }
                 }
 
                 @Override
-                public void onScopeRequestFailed(String message) {
+                public void onScopeRequestFailed(@NonNull String message) {
                     runOnUiThread(() -> Toast.makeText(
                             MainActivity.this,
                             "作用域请求失败: " + message,

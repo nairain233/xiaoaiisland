@@ -9,11 +9,8 @@ public final class ConfigDefaults {
     public static final int STAGE_POST = 2;
     public static final int REMINDER_MINUTES = 15;
     public static final int MINUTES_OFFSET = 0;
-    public static final int TIMEOUT_VALUE = -1;
+    public static final int TIMEOUT_VALUE = 60;
     public static final String TIMEOUT_UNIT = "m";
-    public static final String KEY_NOTIF_DISMISS_TRIGGER = "notif_dismiss_trigger";
-    static final String KEY_NOTIF_GLOBAL_DEFAULT = "to_notif_global_default";
-    static final String NOTIF_TRIGGER = "pre";
     public static final boolean SWITCH_DISABLED = false;
     public static final boolean REPOST_ENABLED = false;
     public static final int ISLAND_BUTTON_MODE = 0;
@@ -72,7 +69,7 @@ public final class ConfigDefaults {
 
     static int intDefault(String key, int fallback) {
         if (key == null) return fallback;
-        if (key.startsWith("to_island_val_") || key.startsWith("to_notif_val_")) {
+        if (key.startsWith("to_island_val_")) {
             return TIMEOUT_VALUE;
         }
         return switch (key) {
@@ -87,9 +84,10 @@ public final class ConfigDefaults {
 
     static boolean boolDefault(String key, boolean fallback) {
         if (key == null) return fallback;
+        if (key.startsWith("stage_enabled_")) return true;
         return switch (key) {
             case "repost_enabled" -> REPOST_ENABLED;
-            case KEY_NOTIF_GLOBAL_DEFAULT, "out_effect_enabled", "out_effect_expand_enabled" -> true;
+            case "out_effect_enabled", "out_effect_expand_enabled" -> true;
             // legacy keys (兼容旧版本)
             case "out_effect_status_enabled", "status_left_text_dynamic_highlight_enabled",
                     "status_right_text_dynamic_highlight_enabled" -> false;
@@ -101,11 +99,10 @@ public final class ConfigDefaults {
 
     static String stringDefault(String key, String fallback) {
         if (key == null) return fallback;
-        if (key.startsWith("to_island_unit_") || key.startsWith("to_notif_unit_")) {
+        if (key.startsWith("to_island_unit_")) {
             return TIMEOUT_UNIT;
         }
         return switch (key) {
-            case "notif_dismiss_trigger" -> NOTIF_TRIGGER;
             case "course_data_source" -> "xiaoai";
             case "wakeup_morning_rules_json" -> WAKEUP_MORNING_RULES_JSON;
             case "wakeup_afternoon_rules_json" -> WAKEUP_AFTERNOON_RULES_JSON;
@@ -152,6 +149,10 @@ public final class ConfigDefaults {
         return STAGE_PHASES[idx];
     }
 
+    public static String stageEnabledKey(int stageIndex) {
+        return "stage_enabled_" + stagePhase(stageIndex);
+    }
+
     static int normalizeStageIndex(int stageIndex) {
         if (stageIndex < STAGE_PRE || stageIndex >= STAGE_PHASES.length) return STAGE_PRE;
         return stageIndex;
@@ -159,10 +160,11 @@ public final class ConfigDefaults {
 
     public static boolean isConfigKey(String key) {
         if (key == null || key.isEmpty()) return false;
-        if (key.startsWith("tpl_") || key.startsWith("to_island_") || key.startsWith("to_notif_")) return true;
+        if (key.startsWith("tpl_") || key.startsWith("to_island_")
+                || key.startsWith("to_notif_") || key.startsWith("stage_enabled_")) return true;
         if ("migration_config_v1_done".equals(key)
                 || "migration_config_v2_done".equals(key)
-                || KEY_NOTIF_DISMISS_TRIGGER.equals(key)) return true;
+                || "notif_dismiss_trigger".equals(key)) return true;
         return "reminder_minutes_before".equals(key)
                 || "mute_enabled".equals(key)
                 || "mute_mins_before".equals(key)

@@ -96,12 +96,9 @@ private data class StageCustomState(
 )
 
 private data class TimeoutUiState(
-    val islandVals: MutableList<Int> = mutableListOf(-1, -1, -1),
+    val enabled: MutableList<Boolean> = mutableListOf(true, true, true),
+    val islandVals: MutableList<Int> = mutableListOf(60, 60, 60),
     val islandUnits: MutableList<String> = mutableListOf("m", "m", "m"),
-    val notifVals: MutableList<Int> = mutableListOf(-1, -1, -1),
-    val notifUnits: MutableList<String> = mutableListOf("m", "m", "m"),
-    var notifTriggerStage: Int = 0,
-    var notifGlobalDefault: Boolean = true,
 )
 
 private data class WakeRule(
@@ -224,7 +221,7 @@ private val AppRoute.title: String
         AppRoute.TestNotify -> "测试通知"
         AppRoute.StatusCustom -> "状态栏岛自定义"
         AppRoute.ExpandedCustom -> "展开态自定义"
-        AppRoute.Timeout -> "消失时间"
+        AppRoute.Timeout -> "阶段显示与时长"
         AppRoute.Reminder -> "课前提醒"
         AppRoute.Mute -> "上课免打扰"
         AppRoute.Wakeup -> "自动叫醒"
@@ -481,8 +478,8 @@ private fun HomeEntryPage(
                     onClick = { onOpen(AppRoute.ExpandedCustom) },
                 )
                 ArrowPreference(
-                    title = "消失时间",
-                    summary = "分别管理岛消息与通知消息的消失时间和阶段触发",
+                    title = "阶段显示与时长",
+                    summary = "独立启用课前、课中、课后，设置岛与通知的显示时长",
                     onClick = { onOpen(AppRoute.Timeout) },
                 )
                 ArrowPreference(
@@ -1183,195 +1180,71 @@ private fun TimeoutPage(
     modifier: Modifier = Modifier,
     pagePadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val context = LocalContext.current
-    val stageLabels = remember { listOf("通知后", "上课后", "下课后") }
-    val stageEntries = remember(stageLabels) { stageLabels }
+    val stageLabels = remember { listOf("上课前", "上课中", "下课后") }
+    var pickerStage by remember { mutableIntStateOf(-1) }
 
-    val islandVals = remember(state.timeoutState) { state.timeoutState.islandVals.toMutableList() }
-    val islandUnits = remember(state.timeoutState) {
-        state.timeoutState.islandUnits.toMutableList().apply {
-            indices.forEach { idx -> this[idx] = normalizeTimeoutUnit(this[idx]) }
-        }
-    }
-    val islandDefaults = remember(state.timeoutState) {
-        mutableStateListOf<Boolean>().apply {
-            repeat(stageLabels.size) { idx ->
-                add(islandVals[idx] < 0)
-            }
-        }
-    }
-
-    val notifVals = remember(state.timeoutState) { state.timeoutState.notifVals.toMutableList() }
-    val notifUnits = remember(state.timeoutState) {
-        state.timeoutState.notifUnits.toMutableList().apply {
-            indices.forEach { idx -> this[idx] = normalizeTimeoutUnit(this[idx]) }
-        }
-    }
-    var notifStage by remember(state.timeoutState) {
-        mutableIntStateOf(state.timeoutState.notifTriggerStage.coerceIn(0, 2))
-    }
-    var notifGlobalDefault by remember(state.timeoutState) {
-        mutableStateOf(state.timeoutState.notifGlobalDefault)
-    }
-    var islandPickerStage by remember(state.timeoutState) { mutableIntStateOf(-1) }
-    var showNotifPicker by remember(state.timeoutState) { mutableStateOf(false) }
-
-    fun persistTimeoutStateNow() {
-        repeat(stageLabels.size) { idx ->
-            islandVals[idx] = if (islandDefaults[idx]) {
-                ConfigDefaults.TIMEOUT_VALUE
-            } else {
-                islandVals[idx].coerceAtLeast(1)
-            }
-            islandUnits[idx] = normalizeTimeoutUnit(islandUnits[idx])
-        }
-
-        val selectedNotifValue = notifVals[notifStage]
-        val selectedNotifUnit = normalizeTimeoutUnit(notifUnits[notifStage])
-        repeat(stageLabels.size) { idx ->
-            notifVals[idx] = ConfigDefaults.TIMEOUT_VALUE
-            notifUnits[idx] = normalizeTimeoutUnit(notifUnits[idx])
-        }
-        if (notifGlobalDefault) {
-            // keep default
-        } else {
-            notifVals[notifStage] = selectedNotifValue.coerceAtLeast(1)
-            notifUnits[notifStage] = selectedNotifUnit
-        }
-
-        val saved = TimeoutUiState(
-            islandVals = islandVals.toMutableList(),
-            islandUnits = islandUnits.toMutableList(),
-            notifVals = notifVals.toMutableList(),
-            notifUnits = notifUnits.toMutableList(),
-            notifTriggerStage = notifStage,
-            notifGlobalDefault = notifGlobalDefault,
-        )
+    fun persist(updated: TimeoutUiState) {
         val editor = activity.uiEditConfigPrefs()
-        writeTimeoutState(editor, saved)
+        writeTimeoutState(editor, updated)
         editor.apply()
-        state.timeoutState = saved
+        state.timeoutState = updated
     }
 
     val hints = rememberDismissibleHints(activity)
     SettingsPage(modifier = modifier, pagePadding = pagePadding) {
         dismissibleHint(
             hints = hints,
-            key = "hint_timeout",
-            text = "通知消失时岛随之消失；岛消失不影响通知。默认 = 使用系统值（岛 3600 秒，通知 720 分钟）",
+            key = "hint_stage_display",
+            text = "关闭阶段或显示时长到期后，岛与通知一起隐藏；下一个开启的阶段会重新显示。每节课仅首次显示时提醒，修改设置后恢复显示保持静默。默认显示时长为 60 分钟。",
         )
-
         stageLabels.forEachIndexed { idx, label ->
-            item(key = "岛消失 · $label") {
-                SettingsSection(
-                    title = "岛消失 · $label",
-                ) {
+            item(key = "stage_display_$idx") {
+                SettingsSection(title = label) {
                     SwitchPreference(
-                        title = "默认",
-                        checked = islandDefaults[idx],
-                        onCheckedChange = {
-                            islandDefaults[idx] = it
-                            if (!it && islandVals[idx] <= 0) {
-                                islandVals[idx] = 1
-                            }
-                            persistTimeoutStateNow()
+                        title = "启用",
+                        checked = state.timeoutState.enabled[idx],
+                        onCheckedChange = { checked ->
+                            persist(state.timeoutState.copy(
+                                enabled = state.timeoutState.enabled.toMutableList().apply {
+                                    this[idx] = checked
+                                },
+                            ))
+                            if (!checked && pickerStage == idx) pickerStage = -1
                         },
                     )
-                    if (!islandDefaults[idx]) {
+                    if (state.timeoutState.enabled[idx]) {
                         ArrowPreference(
-                            title = "时长",
+                            title = "显示时长",
                             endActions = {
-                                PreferenceValue(
-                                    formatTimeoutDuration(
-                                        islandVals[idx],
-                                        islandUnits[idx]
-                                    )
-                                )
+                                PreferenceValue(formatTimeoutDuration(
+                                    state.timeoutState.islandVals[idx],
+                                    state.timeoutState.islandUnits[idx],
+                                ))
                             },
-                            onClick = { islandPickerStage = idx },
+                            onClick = { pickerStage = idx },
                         )
                     }
                 }
             }
         }
-
-        dismissibleHint(
-            hints = hints,
-            key = "hint_timeout_notify_expire",
-            text = "设置时间到达后，将取消通知，后续将不再更新状态（上课/下课）。",
-        )
-        item(key = "通知消失") {
-            SettingsSection(
-                title = "通知消失",
-            ) {
-                SwitchPreference(
-                    title = "默认",
-                    checked = notifGlobalDefault,
-                    onCheckedChange = {
-                        notifGlobalDefault = it
-                        if (!it && notifVals[notifStage] <= 0) {
-                            notifVals[notifStage] = 1
-                        }
-                        persistTimeoutStateNow()
+    }
+    if (pickerStage in stageLabels.indices && state.timeoutState.enabled[pickerStage]) {
+        val stage = pickerStage
+        MiuixDurationPickerDialog(
+            title = "显示时长（${stageLabels[stage]}）",
+            initialValue = state.timeoutState.islandVals[stage],
+            initialUnit = state.timeoutState.islandUnits[stage],
+            onDismiss = { pickerStage = -1 },
+            onConfirm = { value, unit ->
+                persist(state.timeoutState.copy(
+                    islandVals = state.timeoutState.islandVals.toMutableList().apply {
+                        this[stage] = value
                     },
-                )
-                if (!notifGlobalDefault) {
-                    OverlayDropdownPreference(
-                        title = "触发阶段",
-                        items = stageEntries,
-                        selectedIndex = notifStage,
-                        onSelectedIndexChange = { newIndex ->
-                            notifStage = newIndex.coerceIn(0, stageLabels.lastIndex)
-                            if (notifVals[notifStage] <= 0) {
-                                notifVals[notifStage] = 1
-                            }
-                            persistTimeoutStateNow()
-                        },
-                    )
-                    ArrowPreference(
-                        title = "时长",
-                        endActions = {
-                            PreferenceValue(
-                                formatTimeoutDuration(
-                                    notifVals[notifStage],
-                                    notifUnits[notifStage]
-                                )
-                            )
-                        },
-                        onClick = { showNotifPicker = true },
-                    )
-                }
-            }
-        }
-    }
-    if (islandPickerStage in stageLabels.indices) {
-        val stage = islandPickerStage
-        MiuixDurationPickerDialog(
-            title = "岛消失时长（${stageLabels[stage]}）",
-            initialValue = islandVals[stage].takeIf { it > 0 } ?: 1,
-            initialUnit = islandUnits[stage],
-            onDismiss = { islandPickerStage = -1 },
-            onConfirm = { value, unit ->
-                islandVals[stage] = value
-                islandUnits[stage] = unit
-                islandDefaults[stage] = false
-                persistTimeoutStateNow()
-                islandPickerStage = -1
-            },
-        )
-    }
-    if (showNotifPicker && !notifGlobalDefault) {
-        MiuixDurationPickerDialog(
-            title = "通知消失时长",
-            initialValue = notifVals[notifStage].takeIf { it > 0 } ?: 1,
-            initialUnit = notifUnits[notifStage],
-            onDismiss = { showNotifPicker = false },
-            onConfirm = { value, unit ->
-                notifVals[notifStage] = value
-                notifUnits[notifStage] = unit
-                notifGlobalDefault = false
-                persistTimeoutStateNow()
-                showNotifPicker = false
+                    islandUnits = state.timeoutState.islandUnits.toMutableList().apply {
+                        this[stage] = unit
+                    },
+                ))
+                pickerStage = -1
             },
         )
     }
@@ -2021,12 +1894,9 @@ private fun formatTimeoutDuration(value: Int, unit: String): String {
 private fun readTimeoutState(prefs: android.content.SharedPreferences): TimeoutUiState {
     val cfg = TimeoutConfig.read(PrefsAccess.resolve(prefs))
     return TimeoutUiState(
+        enabled = cfg.enabled.toMutableList(),
         islandVals = cfg.islandVals.toMutableList(),
         islandUnits = cfg.islandUnits.toMutableList(),
-        notifVals = cfg.notifVals.toMutableList(),
-        notifUnits = cfg.notifUnits.toMutableList(),
-        notifTriggerStage = cfg.notifTriggerStage,
-        notifGlobalDefault = cfg.notifGlobalDefault,
     )
 }
 
@@ -2036,13 +1906,10 @@ private fun writeTimeoutState(
 ) {
     val save = TimeoutConfig.read(PrefsAccess.resolve(null))
     for (i in state.islandVals.indices) {
+        save.enabled[i] = state.enabled[i]
         save.islandVals[i] = state.islandVals[i]
         save.islandUnits[i] = normalizeTimeoutUnit(state.islandUnits[i])
-        save.notifVals[i] = state.notifVals[i]
-        save.notifUnits[i] = normalizeTimeoutUnit(state.notifUnits[i])
     }
-    save.notifTriggerStage = state.notifTriggerStage
-    save.notifGlobalDefault = state.notifGlobalDefault
     save.write(editor)
 }
 

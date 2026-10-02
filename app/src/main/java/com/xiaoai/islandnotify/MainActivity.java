@@ -471,13 +471,14 @@ public class MainActivity extends ComponentActivity {
             if (all == null || all.isEmpty()) return;
             if (sp.getBoolean(KEY_MIGRATION_DONE, false)) {
                 SharedPreferences.Editor ed = sp.edit();
+                ConfigMigration.migrateBaseConfig(sp, ed);
                 boolean changed = ConfigMigration.purgeLegacyConfigKeys(ed);
                 changed |= migrateConfigV2Once(sp, ed);
                 if (changed) ed.apply();
                 return;
             }
             SharedPreferences.Editor ed = sp.edit();
-            ConfigMigration.migrateBaseConfig(sp, ed, ConfigDefaults.KEY_NOTIF_DISMISS_TRIGGER);
+            ConfigMigration.migrateBaseConfig(sp, ed);
             migrateLegacyActiveTimerSwitch(sp, ed);
             ConfigMigration.purgeLegacyConfigKeys(ed);
             migrateConfigV2Once(sp, ed);
@@ -795,6 +796,10 @@ public class MainActivity extends ComponentActivity {
 
         int count = 0;
         count += applyJsonToSharedPrefs(getConfigPrefs(), prefs.optJSONObject(PREFS_TYPE_CONFIG));
+        SharedPreferences config = getConfigPrefs();
+        SharedPreferences.Editor configEditor = config.edit();
+        ConfigMigration.migrateBaseConfig(config, configEditor);
+        configEditor.apply();
         count += applyJsonToSharedPrefs(getHolidayPrefs(), prefs.optJSONObject(PREFS_TYPE_HOLIDAY));
         count += applyJsonToSharedPrefs(getSharedPreferences(PREFS_UI_NAME, Context.MODE_PRIVATE),
                 prefs.optJSONObject(PREFS_TYPE_UI));

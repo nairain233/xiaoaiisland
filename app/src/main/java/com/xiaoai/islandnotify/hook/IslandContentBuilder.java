@@ -320,22 +320,9 @@ final class IslandContentBuilder {
             final boolean finalUsePureTimerAsDynamicTitle = usePureTimerAsDynamicTitle;
 
             String timeRange = info.startTime + (info.endTime.isEmpty() ? "" : "-" + info.endTime);
-            String phase = ConfigDefaults.stagePhase(stageIndex);
-            int islandToVal = PrefsAccess.readConfigInt(
-                    prefs, "to_island_val_" + phase, ConfigDefaults.TIMEOUT_VALUE);
-            String islandToUnit = PrefsAccess.readConfigString(
-                    prefs, "to_island_unit_" + phase, ConfigDefaults.TIMEOUT_UNIT);
-            int islandTimeoutSec = -1;
-            if (islandToVal > 0) {
-                if ("s".equals(islandToUnit)) {
-                    islandTimeoutSec = islandToVal;
-                } else if ("h".equals(islandToUnit)) {
-                    islandTimeoutSec = islandToVal * 3600;
-                } else {
-                    islandTimeoutSec = islandToVal * 60;
-                }
-            }
-            final int finalIslandTimeoutSec = islandTimeoutSec;
+            long stageDurationMs = PrefsAccess.readStageDurationMs(prefs, stageIndex);
+            final int finalIslandTimeoutSec = (int) Math.min(Integer.MAX_VALUE,
+                    (stageDurationMs + 999L) / 1000L);
             final long finalTimerMs = timerMs;
             final int finalTimerType = timerType;
             String tickerText = applyExtraVars(resolveTemplate(
@@ -346,6 +333,9 @@ final class IslandContentBuilder {
 
             Bundle extras = FocusNotification.buildV3(template -> {
                 template.setBusiness("course_schedule");
+                // 超级岛平台的分钟级通知时限不得早于模块的精确阶段时限。
+                template.setTimeout((int) Math.min(Integer.MAX_VALUE,
+                        (stageDurationMs + 59999L) / 60000L));
                 template.setUpdatable(true);
                 template.setTicker(finalTickerText);
                 template.setAodTitle(finalTickerText);

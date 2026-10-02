@@ -15,6 +15,8 @@ import android.service.notification.StatusBarNotification;
 import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
+import com.xiaoai.islandnotify.StageDisplayState;
 
 import com.xiaoai.islandnotify.AlarmScheduler;
 import com.xiaoai.islandnotify.ConfigDefaults;
@@ -63,6 +65,11 @@ public class MainHook {
     private static final String ACTION_SHIGUANG_COURSE_SYNC = ShiguangHook.ACTION_SHIGUANG_COURSE_SYNC;
     /** 通知定时取消广播 Action（替代 Handler.postDelayed，setAlarmClock 保证精确触发） */
     private static final String ACTION_NOTIF_CANCEL = "com.xiaoai.islandnotify.ACTION_NOTIF_CANCEL";
+    private static final String ACTION_STAGE_HIDE = "com.xiaoai.islandnotify.ACTION_STAGE_HIDE";
+    private static final String ACTION_PRESENTATION_DISMISS = "com.xiaoai.islandnotify.PRESENTATION_DISMISS";
+    private static final String PRESENTATION_PREFIX = "course_display_";
+    private final java.util.Map<String, Presentation> mPresentations = new java.util.LinkedHashMap<>();
+    private boolean mPresentationsLoaded;
     /** shareData 拖拽分享图片在 miui.focus.pics Bundle 中的 key */
     private static final String PIC_KEY_SHARE = "miui.focus.pic_share";
     /** 测试通知专用标记：用于避免被“旧课表残留精确清理”误删 */
@@ -301,10 +308,6 @@ public class MainHook {
         }
     }
 
-    /** 有连续后续课程的通知 alarmId 集合：injectIslandParams 跳过 cancel alarm 注册，
-     *  防止中间课程通知被提前清除；cancel 由 consecutive 更新路径接管后统一重建。 */
-    private final java.util.Set<Integer> mConsecutiveAnchors =
-            java.util.Collections.synchronizedSet(new java.util.HashSet<>());
     /** 通知 id → 当前持有该通知的课程名，防止旧课程的陈旧 STATE_FINISHED 广播在新课更新后覆写岛 */
     private final java.util.Map<Integer, String> mNotifCourseOwner =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -367,6 +370,8 @@ public class MainHook {
                 filter.addAction(ACTION_MANUAL_SKIP_CLASS);
                 filter.addAction(ACTION_RESCHEDULE_DAILY);
                 filter.addAction(ACTION_NOTIF_CANCEL);
+                filter.addAction(ACTION_STAGE_HIDE);
+                filter.addAction(ACTION_PRESENTATION_DISMISS);
                 filter.addAction(ACTION_WAKEUP_COURSE_SYNC);
                 filter.addAction(ACTION_SHIGUANG_COURSE_SYNC);
                 BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -375,42 +380,7 @@ public class MainHook {
                         String action = intent == null ? null : intent.getAction();
                         if (dispatchSimpleAction(context, intent, action)) return;
                         if (ACTION_ISLAND_UPDATE.equals(action)) {
-                            String courseName = safeStr(intent.getStringExtra("course_name"));
-                            String startTime  = safeStr(intent.getStringExtra("start_time"));
-                            String endTime    = safeStr(intent.getStringExtra("end_time"));
-                            String classroom  = safeStr(intent.getStringExtra("classroom"));
-                            String sectionRange = safeStr(intent.getStringExtra("section_range"));
-                            String teacher = safeStr(intent.getStringExtra("teacher"));
-                            CourseInfo info   = new CourseInfo(courseName, startTime, endTime, classroom, sectionRange, teacher);
-                            int state         = intent.getIntExtra("state", STATE_ELAPSED);
-                            String tag        = intent.getStringExtra("notif_tag");
-                            int id            = intent.getIntExtra("notif_id", 0);
-                            int automationAlarmId = intent.getIntExtra("automation_alarm_id", id);
-                            android.app.NotificationManager nm =
-                                    context.getSystemService(android.app.NotificationManager.class);
-                            // 找到当前活跃通知以复用其图标和 intent
-                            Notification src = null;
-                            for (StatusBarNotification sbn : nm.getActiveNotifications()) {
-                                if (sbn.getId() == id) {
-                                    src = sbn.getNotification();
-                                    break;
-                                }
-                            }
-                            if (src == null) {
-                                XposedBridge.log(TAG + ": 闹钟回调时通知已消失，跳过 state=" + state);
-                                return;
-                            }
-                            // 连续课程防竞争：若此通知已被新课接管，拒绝旧课陈旧的 STATE_FINISHED 广播
-                            String staleOwner = mNotifCourseOwner.get(id);
-                            if (staleOwner != null && !staleOwner.equals(courseName)) {
-                                XposedBridge.log(TAG + ": [跳过陈旧state] state=" + state
-                                        + " id=" + id + " (" + courseName + ") 已被「"
-                                        + staleOwner + "」接管，忽略");
-                                return;
-                            }
-                            SharedPreferences prefs = getConfigPrefs();
-                            sendIslandUpdate(info, state, context, src, nm, tag, id,
-                                    automationAlarmId, prefs);
+                            handlePresentationUpdate(context, intent);
                         } else if (ACTION_TEST_NOTIFY.equals(action)) {
                             // 由模块 APP 触发，在目标进程内构造并发送测试通知
                             String tCourseName = intent.getStringExtra("course_name");
@@ -426,34 +396,9 @@ public class MainHook {
                             if (tSection == null) tSection = "";
                             if (tTeacher == null) tTeacher = "";
 
-                            // 独立测试通知渠道，不依赖 voiceassist 自带渠道（importance 不受控制）
-                            final String TEST_CHANNEL_ID = "xiaoai_course_reminder_alert";
                             android.app.NotificationManager tnm =
                                     context.getSystemService(android.app.NotificationManager.class);
                             if (tnm == null) return;
-                            if (tnm.getNotificationChannel(TEST_CHANNEL_ID) == null) {
-                                android.app.NotificationChannel tch = new android.app.NotificationChannel(
-                                        TEST_CHANNEL_ID, "课程提醒", android.app.NotificationManager.IMPORTANCE_HIGH);
-                                tch.enableVibration(true);
-                                tnm.createNotificationChannel(tch);
-                            }
-
-                            android.app.Notification tNotif = new android.app.Notification.Builder(context, TEST_CHANNEL_ID)
-                                    .setSmallIcon(android.R.drawable.ic_dialog_info)
-                                    // 加 title/text 防止 MIUI 因无内容静默丢弃通知
-                                    .setContentTitle("[" + tCourseName + "]快到了，提前准备一下吧")
-                                    .setContentText(tStartTime + " - " + tEndTime + "  " + tClassroom)
-                                    .build();
-                            if (tNotif.extras == null) tNotif.extras = new android.os.Bundle();
-                            // 保留 title/text：MIUI 在解析岛 JSON 前先校验通知内容，
-                            // 删除 title/text 会导致 MIUI 将通知静默丢弃（「内容为空」）
-                            tNotif.extras.putString("xiaoai.test.course_name", tCourseName);
-                            tNotif.extras.putString("xiaoai.test.start_time",  tStartTime);
-                            tNotif.extras.putString("xiaoai.test.end_time",    tEndTime);
-                            tNotif.extras.putString("xiaoai.test.classroom",   tClassroom);
-                            tNotif.extras.putString("xiaoai.test.section_range", tSection);
-                            tNotif.extras.putString("xiaoai.test.teacher", tTeacher);
-                            tNotif.extras.putBoolean(KEY_TEST_NOTIF_MARKER, true);
 
                             long nowEpochMs = System.currentTimeMillis();
                             int seqInMs;
@@ -489,8 +434,9 @@ public class MainHook {
                             sLastTestNotifTag = tNotifTag;
                             XposedBridge.log(TAG + ": 即将发出测试通知 → " + tCourseName + " @" + tStartTime);
                             CourseInfo tInfo = new CourseInfo(tCourseName, tStartTime, tEndTime, tClassroom, tSection, tTeacher);
-                            applyIslandParams(context, tNotif, tInfo, tNotifId, tNotifTag);
-                            tnm.notify(tNotifTag, tNotifId, tNotif);
+                            Presentation test = preparePresentation(context, tInfo, tNotifId,
+                                    tNotifTag, tNotifId, nowEpochMs, false, -1, true);
+                            displayPresentation(context, test, false);
                             XposedBridge.log(TAG + ": 已在目标进程发出测试通知 id=" + tNotifId);
                             // 测试通知按用户设定的时间逻辑调度静音/取消静音闹钟：
                             // 分钟数直接从 intent 读取（MainActivity 调用时已携带），不读 SP，消除跨进程缓存旧值问题
@@ -541,147 +487,7 @@ public class MainHook {
                                 }
                             }
                         } else if (ACTION_COURSE_REMINDER.equals(action)) {
-                            // AlarmManager 触发课前提醒 → 在 voiceassist 进程构造通知
-                            String crName  = safeStr(intent.getStringExtra("course_name"));
-                            String crStart = safeStr(intent.getStringExtra("start_time"));
-                            String crEnd   = safeStr(intent.getStringExtra("end_time"));
-                            String crRoom  = safeStr(intent.getStringExtra("classroom"));
-                            String crSection = safeStr(intent.getStringExtra("section_range"));
-                            String crTeacher = safeStr(intent.getStringExtra("teacher"));
-                            int    crId    = intent.getIntExtra("notif_id", 2001);
-                            boolean crConsecutive = intent.getBooleanExtra("consecutive", false);
-
-                            android.app.NotificationManager crnm =
-                                    context.getSystemService(android.app.NotificationManager.class);
-                            if (crnm == null) return;
-
-                            // ── 连续课程：直接更新现有岛，避免双岛并存 ────────────────────
-                            if (crConsecutive) {
-                                android.service.notification.StatusBarNotification prevSbn = null;
-                                for (android.service.notification.StatusBarNotification sbn
-                                        : crnm.getActiveNotifications()) {
-                                    android.app.Notification sn = sbn.getNotification();
-                                    // 找到我们注入过岛参数或带有课程标记的活跃通知
-                                    if (sn.extras != null
-                                            && (sn.extras.containsKey(KEY_FOCUS_PARAM)
-                                                || sn.extras.containsKey("xiaoai.test.course_name"))) {
-                                        prevSbn = sbn;
-                                        break;
-                                    }
-                                }
-                                if (prevSbn != null) {
-                                    // 用新课程信息直接更新现有岛（STATE_COUNTDOWN），无新通知声音
-                                    CourseInfo newInfo = new CourseInfo(crName, crStart, crEnd, crRoom, crSection, crTeacher);
-                                    SharedPreferences crPrefs = context.getSharedPreferences(
-                                            PREFS_NAME, Context.MODE_PRIVATE);
-                                    int    prevId  = prevSbn.getId();
-                                    String prevTag = prevSbn.getTag();
-                                    // ① 更新所有权：阻止旧课陈旧的 STATE_FINISHED 广播在新课更新后覆写岛
-                                    mNotifCourseOwner.put(prevId, crName);
-                                    // ② 主动取消旧课的 STATE_ELAPSED/FINISHED 闹钟，彻底消除竞争
-                                    AlarmManager staleAm = context.getSystemService(AlarmManager.class);
-                                    for (int ss = 1; ss <= 2; ss++) {
-                                        PendingIntent stalePi = PendingIntent.getService(context,
-                                                prevId * 10 + ss,
-                                                createServiceIntent(ACTION_ISLAND_UPDATE),
-                                                PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
-                                        if (stalePi != null) { staleAm.cancel(stalePi); stalePi.cancel(); }
-                                    }
-                                    // 为确保连续课程能触发岛的弹出动画，不能只用低权重的 sendIslandUpdate
-                                    // 而是重建高权重的 CR_CH 通知，模拟新课提醒
-                                    final String CR_CH = "xiaoai_course_reminder_alert";
-                                    if (crnm.getNotificationChannel(CR_CH) == null) {
-                                        android.app.NotificationChannel crch = new android.app.NotificationChannel(
-                                                CR_CH, "课程提醒", android.app.NotificationManager.IMPORTANCE_HIGH);
-                                        crch.enableVibration(true);
-                                        crnm.createNotificationChannel(crch);
-                                    }
-                                    android.app.Notification jumpNotif = new android.app.Notification.Builder(context, CR_CH)
-                                            .setSmallIcon(prevSbn.getNotification().getSmallIcon())
-                                            .setContentTitle("[" + crName + "]快到了，提前准备一下吧")
-                                            .setContentText(crStart + " - " + crEnd + "  " + crRoom)
-                                            .setOnlyAlertOnce(false) // 强制发声/震动/弹出
-                                            .build();
-                                    if (jumpNotif.extras == null) jumpNotif.extras = new android.os.Bundle();
-                                    jumpNotif.extras.putString("xiaoai.test.course_name", crName);
-                                    jumpNotif.extras.putString("xiaoai.test.start_time",  crStart);
-                                    jumpNotif.extras.putString("xiaoai.test.end_time",    crEnd);
-                                    jumpNotif.extras.putString("xiaoai.test.classroom",   crRoom);
-
-                                    // 必须更换 ID 才能让系统认为这是一个全新的重要通知，从而触发下推和灵动岛展开
-                                    int newId = buildConsecutiveNotifId(crName, crStart, crEnd, crRoom);
-                                    // 展示用 newId；自动化/逃课按规范 crId 登记（与调度/静音闹钟一致）
-                                    applyIslandParams(context, jumpNotif, newInfo, newId, prevTag, crId);
-                                    
-                                    // 取消旧的通知，发送新的
-                                    if (prevTag != null) {
-                                        crnm.cancel(prevTag, prevId);
-                                        crnm.notify(prevTag, newId, jumpNotif);
-                                    } else {
-                                        crnm.cancel(prevId);
-                                        crnm.notify(newId, jumpNotif);
-                                    }
-                                    // 正常情况 prevId≠newId；防御重复广播极端情形下二者相等时误删刚写的新映射
-                                    if (prevId != newId) mNotifAutomationById.remove(prevId);
-                                    // 为新课程调度 STATE_ELAPSED / STATE_FINISHED
-                                    // reqCode 使用 newId
-                                    long crStartMs = computeClassStartMs(crStart);
-                                    long crEndMs   = computeClassStartMs(crEnd);
-                                    long nowCr     = System.currentTimeMillis();
-                                    if (crStartMs > nowCr) {
-                                        // 还没上课，调度 alarm
-                                        MainHook.this.scheduleIslandAlarm(context, newInfo,
-                                                STATE_ELAPSED, CR_CH, prevTag, newId, crStartMs, crId);
-                                    } else {
-                                        // 0 间隔连续课程：trigger 触发时已到上课时间，立即刷为"上课中"
-                                        XposedBridge.log(TAG + ": [连续课程] crStartMs 已过，立即刷 STATE_ELAPSED");
-                                        sendIslandUpdate(newInfo, STATE_ELAPSED, context,
-                                                jumpNotif, crnm,
-                                                prevTag, newId, crId, crPrefs);
-                                    }
-                                    if (crEndMs > nowCr) {
-                                        MainHook.this.scheduleIslandAlarm(context, newInfo,
-                                                STATE_FINISHED, CR_CH, prevTag, newId, crEndMs, crId);
-                                    } else {
-                                        // 下课时间也已过（极端情况，补发 STATE_FINISHED）
-                                        XposedBridge.log(TAG + ": [连续课程] crEndMs 已过，立即刷 STATE_FINISHED");
-                                        sendIslandUpdate(newInfo, STATE_FINISHED, context,
-                                                jumpNotif, crnm,
-                                                prevTag, newId, crId, crPrefs);
-                                    }
-                                    scheduleNotifCancelAlarms(context, crPrefs, prevTag, newId,
-                                            nowCr, crStartMs, crEndMs);
-                                    XposedBridge.log(TAG + ": [连续课程] 岛已更新 → " + crName
-                                            + " oldId=" + prevId + " newId=" + newId);
-                                    return; // 不再发新通知
-                                }
-                                // 未找到现有岛，降级到正常发送路径
-                                XposedBridge.log(TAG + ": [连续课程] 未找到现有岛，降级为新通知");
-                            }
-
-                            // ── 正常路径：发新通知（首节课或降级）────────────────────────
-                            final String CR_CH = "xiaoai_course_reminder_alert";
-                            if (crnm.getNotificationChannel(CR_CH) == null) {
-                                android.app.NotificationChannel crch = new android.app.NotificationChannel(
-                                        CR_CH, "课程提醒", android.app.NotificationManager.IMPORTANCE_HIGH);
-                                crch.enableVibration(true);
-                                crnm.createNotificationChannel(crch);
-                            }
-                            android.app.Notification crNotif = new android.app.Notification.Builder(context, CR_CH)
-                                    .setSmallIcon(android.R.drawable.ic_dialog_info)
-                                    .setContentTitle("[" + crName + "]快到了，提前准备一下吧")
-                                    .setContentText(crStart + " - " + crEnd + "  " + crRoom)
-                                    .build();
-                            if (crNotif.extras == null) crNotif.extras = new android.os.Bundle();
-                            // 保留 title/text，防止 MIUI 静默丢弃内容为空的通知
-                            crNotif.extras.putString("xiaoai.test.course_name", crName);
-                            crNotif.extras.putString("xiaoai.test.start_time",  crStart);
-                            crNotif.extras.putString("xiaoai.test.end_time",    crEnd);
-                            crNotif.extras.putString("xiaoai.test.classroom",   crRoom);
-                            CourseInfo crInfo = new CourseInfo(crName, crStart, crEnd, crRoom, crSection, crTeacher);
-                            applyIslandParams(context, crNotif, crInfo, crId, null);
-                            crnm.notify(crId, crNotif);
-                            XposedBridge.log(TAG + ": 课前提醒通知已发送 → " + crName + " @" + crStart);
+                            handlePresentationUpdate(context, intent);
                         }
                     }
                 };
@@ -691,6 +497,7 @@ public class MainHook {
                 MiuiSettingsInvoker.init(appCtx, appCtx.getClassLoader());
                 bootstrapRemotePrefsUnified(appCtx);
                 // 从 SP 读取开关状态
+                loadPresentations(appCtx);
                 SharedPreferences initPrefs = getConfigPrefs();
                 refreshRuntimeSwitchesFromPrefs(initPrefs);
                 registerRemotePrefsListener(appCtx);
@@ -776,6 +583,7 @@ public class MainHook {
             String courseName = intent.getStringExtra("course_name");
             int targetId = intent.getIntExtra("notif_id", -1);
             int automationAlarmId = intent.getIntExtra("automation_alarm_id", -1);
+            terminatePresentations(context, automationAlarmId, targetId);
             markAutomationSkippedToday(context, automationAlarmId);
             cancelCourseAutomationAlarms(context, automationAlarmId);
             if (runtime.getBoolean(KEY_RUNTIME_MODULE_MUTE_APPLIED, false)) {
@@ -852,18 +660,12 @@ public class MainHook {
             }
             return true;
         }
+        if (ACTION_STAGE_HIDE.equals(action) || ACTION_PRESENTATION_DISMISS.equals(action)) {
+            handlePresentationEnd(context, intent, ACTION_PRESENTATION_DISMISS.equals(action));
+            return true;
+        }
         if (ACTION_NOTIF_CANCEL.equals(action)) {
-            int cancelId = intent.getIntExtra("notif_id", -1);
-            String cancelTag = intent.getStringExtra("notif_tag");
-            String phase = safeStr(intent.getStringExtra("phase"));
-            if (cancelId == -1) return true;
-            android.app.NotificationManager nm =
-                    context.getSystemService(android.app.NotificationManager.class);
-            if (cancelTag != null) nm.cancel(cancelTag, cancelId);
-            else                   nm.cancel(cancelId);
-            mNotifCourseOwner.remove(cancelId);
-            mNotifAutomationById.remove(cancelId);
-            XposedBridge.log(TAG + ": notif-cancel [" + phase + "] id=" + cancelId);
+            // 旧版整课取消事件停用，防止升级前遗留闹钟破坏阶段恢复。
             return true;
         }
         return false;
@@ -922,6 +724,8 @@ public class MainHook {
                 || ACTION_DO_DND_OFF.equals(action)
                 || ACTION_RESCHEDULE_DAILY.equals(action)
                 || ACTION_NOTIF_CANCEL.equals(action)
+                || ACTION_STAGE_HIDE.equals(action)
+                || ACTION_PRESENTATION_DISMISS.equals(action)
                 // 镜像同步也走这条路：第三方课表用 startService 把本进程拉起来后，
                 // 由此转成包内广播，避免进程已被杀时推送静默丢失。
                 || ACTION_WAKEUP_COURSE_SYNC.equals(action)
@@ -1069,7 +873,7 @@ public class MainHook {
      * @param skipRepost 为 true 时跳过“补发”逻辑（进程重启后第二次延迟调度时使用），
      *                   仅重新调度未来闹钟，避免重复触发岛动画。
      */
-    private void scheduleTodayCourseReminders(Context ctx, String cachedBeanJson, boolean skipRepost) {
+    private synchronized void scheduleTodayCourseReminders(Context ctx, String cachedBeanJson, boolean skipRepost) {
         try {
             final String beanJson;
             if (cachedBeanJson != null) {
@@ -1097,6 +901,8 @@ public class MainHook {
                     new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
             String todayDateStr = holidayFmt.format(new java.util.Date());
             if (HolidayManager.isHoliday(todayDateStr)) {
+                prunePresentations(ctx, java.util.Collections.emptySet());
+                cancelStaleNotifications(ctx, java.util.Collections.emptySet());
                 XposedBridge.log(TAG + ": 今日 " + todayDateStr + " 为节假日，跳过课前提醒调度");
                 return;
             }
@@ -1160,104 +966,56 @@ public class MainHook {
             }
             todaySlots.sort(java.util.Comparator.comparingLong(slot -> slot.startMs));
 
-            mConsecutiveAnchors.clear();
             int scheduledCount = 0;
-            int prevSlotAlarmId = -1;
-            boolean prevSlotSkipped = false;
+            int previousId = -1;
+            boolean previousSkipped = false;
             for (int si = 0; si < todaySlots.size(); si++) {
                 TodayCourseSlot slot = todaySlots.get(si);
                 CourseScheduleParser.CourseSlot course = slot.slot;
-                long startMs = slot.startMs;
-                long endMs = slot.endMs;
-
-                String startTime = course.startTime;
-                String endTime = course.endTime;
-                String courseName = course.courseName;
-                String classroom = course.classroom;
-                String sectionRange = course.sectionRange;
-                String teacher = course.teacher;
-                CourseInfo info = new CourseInfo(courseName, startTime, endTime, classroom, sectionRange, teacher);
-
-                int alarmId = buildCourseNotificationId(
-                        courseName, startTime, endTime, classroom, sectionRange, teacher);
+                CourseInfo info = new CourseInfo(course.courseName, course.startTime, course.endTime,
+                        course.classroom, course.sectionRange, course.teacher);
+                int alarmId = buildCourseNotificationId(course.courseName, course.startTime,
+                        course.endTime, course.classroom, course.sectionRange, course.teacher);
                 validAlarmIds.add(alarmId);
                 boolean skipped = isAutomationSkippedToday(ctx, alarmId);
-
-                // 先取上一节的记录，再把本节写进去：必须在任何 continue 之前完成，
-                // 否则被逃课跳过的课不会更新记录，锚点会错标到更前面那节。
-                int prevAlarmId = prevSlotAlarmId;
-                boolean prevSkipped = prevSlotSkipped;
-                prevSlotAlarmId = alarmId;
-                prevSlotSkipped = skipped;
-
+                int predecessor = previousId;
+                boolean predecessorSkipped = previousSkipped;
+                previousId = alarmId;
+                previousSkipped = skipped;
                 if (skipped) {
-                    XposedBridge.log(TAG + ": [逃课] 跳过该课提醒/补发 alarmId=" + alarmId
-                            + " " + courseName + "@" + startTime);
+                    terminatePresentations(ctx, alarmId, alarmId);
                     continue;
                 }
-
-                long triggerMs = startMs - reminderMs;
-                boolean isConsecutive = false;
-
+                long triggerMs = slot.startMs - reminderMs;
+                boolean consecutive = false;
                 if (si > 0) {
-                    long prevEndMs = todaySlots.get(si - 1).endMs;
-                    long breakMs = startMs - prevEndMs;
-                    if (breakMs >= 0 && breakMs <= reminderMs) {
-                        triggerMs = prevEndMs;
-                        isConsecutive = true;
-                        // 上一节被逃课跳过时没有通知需要保护，不设锚点
-                        if (prevAlarmId != -1 && !prevSkipped) {
-                            mConsecutiveAnchors.add(prevAlarmId);
-                        }
-                        XposedBridge.log(TAG + ": [连续课程] " + courseName
-                                + " 课间=" + (breakMs / 60_000) + "min <= 提醒"
-                                + reminderMinutes + "min，将在上节下课时触发");
+                    long previousEnd = todaySlots.get(si - 1).endMs;
+                    long gap = slot.startMs - previousEnd;
+                    if (gap >= 0 && gap <= reminderMs) {
+                        triggerMs = previousEnd;
+                        consecutive = !predecessorSkipped;
                     }
                 }
-
-                // 连续课程的岛被换发后，实际展示通知用的是派生 id（与 ACTION_COURSE_REMINDER 连续分支一致），
-                // 必须一并纳入有效集合，否则会被 cancelStaleNotifications 当作"残留"误删刚发的提醒。
-                if (isConsecutive) {
-                    validAlarmIds.add(buildConsecutiveNotifId(courseName, startTime, endTime, classroom));
-                }
-
-                if (triggerMs <= nowMs) {
-                    if (nowMs < endMs && !skipRepost && sRepostEnabled) {
-                        android.app.NotificationManager repostNm =
-                                ctx.getSystemService(android.app.NotificationManager.class);
-                        boolean alreadyPosted = false;
-                        if (repostNm != null) {
-                            // 连续课程的岛会被换发到派生 id，补发去重须同时识别：规范 id / 派生 id /
-                            // 运行时映射（覆盖发岛后课程字段再漂移、派生 id 与当前字段对不上的情形），
-                            // 否则在线岛会被误判为"未发"再补发一条，造成同课双岛。
-                            final int derivedId = buildConsecutiveNotifId(
-                                    courseName, startTime, endTime, classroom);
-                            for (android.service.notification.StatusBarNotification sbn
-                                    : repostNm.getActiveNotifications()) {
-                                int sid = sbn.getId();
-                                Integer autoId = mNotifAutomationById.get(sid);
-                                if (sid == alarmId || sid == derivedId
-                                        || (autoId != null && autoId == alarmId)) {
-                                    alreadyPosted = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!alreadyPosted) {
-                            sendCourseReminderNow(ctx, info, alarmId);
-                            String label = (nowMs < startMs) ? "[窗口内补发]" : "[上课中补发]";
-                            XposedBridge.log(TAG + ": " + label + " " + courseName + " @" + startTime);
-                        } else {
-                            XposedBridge.log(TAG + ": [跳过补发] 通知已存在 " + courseName + " id=" + alarmId);
-                        }
-                        scheduledCount++;
+                Presentation presentation = preparePresentation(ctx, info, alarmId, null, alarmId,
+                        triggerMs, consecutive, predecessor, false);
+                if (presentation.state.terminated) continue;
+                schedulePresentationBoundaries(ctx, presentation);
+                if (presentation.state.visible) {
+                    expirePresentationIfDue(ctx, presentation);
+                    if (presentation.state.visible && findPresentationNotification(ctx, presentation) == null) {
+                        presentation.state.terminate();
+                        savePresentation(ctx, presentation);
+                    } else {
+                        schedulePresentationHide(ctx, presentation);
                     }
-                    continue;
                 }
-
-                scheduleCourseReminderAlarm(ctx, info, triggerMs, alarmId, isConsecutive);
+                if (triggerMs <= nowMs && nowMs < slot.endMs
+                        && !skipRepost && sRepostEnabled) {
+                    displayPresentation(ctx, presentation, false);
+                }
                 scheduledCount++;
             }
+            prunePresentations(ctx, validAlarmIds);
             XposedBridge.log(TAG + ": 今日课前提醒已调度 " + scheduledCount
                     + " 条（第" + currentWeek + " 周，提前 " + reminderMinutes + " 分钟）");
 
@@ -1279,43 +1037,6 @@ public class MainHook {
 
 
 
-    /**
-     * 为单节课程注册一个 AlarmManager 精确唤醒闹钟（在 voiceassist 进程内）。
-     * @param isConsecutive 是否为连续课程（课间 < 提醒分钟数，触发时间为上节下课时刻）
-     */
-    private void scheduleCourseReminderAlarm(Context ctx, CourseInfo info,
-                                             long triggerMs, int alarmId,
-                                             boolean isConsecutive) {
-        try {
-            Intent intent = createServiceIntent(ACTION_COURSE_REMINDER);
-            intent.putExtra("course_name",  info.courseName);
-            intent.putExtra("start_time",   info.startTime);
-            intent.putExtra("end_time",     info.endTime);
-            intent.putExtra("classroom",    info.classroom);
-            intent.putExtra("section_range", info.sectionRange);
-            intent.putExtra("teacher", info.teacher);
-            intent.putExtra("notif_id",     alarmId);
-            intent.putExtra("consecutive",  isConsecutive);
-            boolean scheduled = AlarmScheduler.scheduleAlarmClock(
-                    ctx, intent, alarmId,
-                    ACTION_COURSE_REMINDER, TARGET_PACKAGE, alarmId | 0x50000000,
-                    true, triggerMs);
-            if (!scheduled) {
-                XposedBridge.log(TAG + ": scheduleCourseReminderAlarm 跳过：AlarmManager 不可用");
-                return;
-            }
-            synchronized (mScheduledIdsLock) {
-                mScheduledAlarmIds.add(alarmId);
-                saveScheduledIds(ctx, KEY_SCHEDULED_ALARM_IDS, mScheduledAlarmIds);
-            }
-            long minsLeft = (triggerMs - System.currentTimeMillis()) / 60_000;
-            XposedBridge.log(TAG + ": 闹钟已设(AlarmClock) " + info.courseName + " @" + info.startTime
-                    + (isConsecutive ? "（连续课程，上节下课触发）" : "")
-                    + " 约 " + minsLeft + " 分钟后触发");
-        } catch (Exception e) {
-            XposedBridge.log(TAG + ": scheduleCourseReminderAlarm 失败 → " + e.getMessage());
-        }
-    }
 
     /**
      * 取消 mScheduledAlarmIds 中所有已调度的课前提醒 AlarmManager 闹钟。
@@ -1841,53 +1562,6 @@ public class MainHook {
         }, 500); // 清理逻辑延迟稍短即可
     }
 
-    /**
-     * 同时扫描并 cancel 小爱自身已发出的同频道通知（非我方注入的），
-     * 防止通知栏出现旧旧的重复条目。
-     */
-    private void sendCourseReminderNow(Context ctx, CourseInfo info, int notifId) {
-        try {
-            // 使用独立渠道（不依赖 voiceassist 已创建的 COURSE_SCHEDULER_REMINDER_sound，
-            // 因为该渠道由 voiceassist 自身首次创建，importance 不受我们控制）
-            final String CR_CH = "xiaoai_course_reminder_alert";
-            android.app.NotificationManager nm =
-                    ctx.getSystemService(android.app.NotificationManager.class);
-            if (nm == null) return;
-            // 取消小爱自己已发出的旧提醒通知（所有我方注入前的原生通知）
-            for (android.service.notification.StatusBarNotification sbn : nm.getActiveNotifications()) {
-                android.app.Notification n = sbn.getNotification();
-                String ch = safeStr(n.getChannelId());
-                if ((ch.equals("COURSE_SCHEDULER_REMINDER_sound") || ch.equals(CR_CH))
-                        && (n.extras == null || !n.extras.containsKey("xiaoai.test.course_name"))) {
-                    nm.cancel(sbn.getId());
-                    XposedBridge.log(TAG + ": 已 cancel 小爱旧提醒通知 id=" + sbn.getId());
-                }
-            }
-            if (nm.getNotificationChannel(CR_CH) == null) {
-                android.app.NotificationChannel ch = new android.app.NotificationChannel(
-                        CR_CH, "课程提醒", android.app.NotificationManager.IMPORTANCE_HIGH);
-                ch.enableVibration(true);
-                nm.createNotificationChannel(ch);
-            }
-            android.app.Notification notif = new android.app.Notification.Builder(ctx, CR_CH)
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
-                    .setContentTitle("[" + info.courseName + "]快到了，提前准备一下吧")
-                    .setContentText(info.startTime + " - " + info.endTime + "  " + info.classroom)
-                    .build();
-            if (notif.extras == null) notif.extras = new android.os.Bundle();
-            // 保留 title/text，防止 MIUI 静默丢弃内容为空的通知
-            notif.extras.putString("xiaoai.test.course_name", info.courseName);
-            notif.extras.putString("xiaoai.test.start_time",  info.startTime);
-            notif.extras.putString("xiaoai.test.end_time",    info.endTime);
-            notif.extras.putString("xiaoai.test.classroom",   info.classroom);
-            applyIslandParams(ctx, notif, info, notifId, null);
-            nm.notify(notifId, notif);
-            XposedBridge.log(TAG + ": [立即] 课前提醒通知已发送 " + info.courseName
-                    + " @" + info.startTime + " id=" + notifId);
-        } catch (Exception e) {
-            XposedBridge.log(TAG + ": sendCourseReminderNow 失败 → " + e.getMessage());
-        }
-    }
 
     /**
      * 用 FileObserver 监听 CourseData.xml 的写入（包括跨进程写入）。
@@ -2035,65 +1709,382 @@ public class MainHook {
     // 超级岛参数注入
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * 向通知注入超级岛参数（miui.focus.param），并调度岛状态更新/取消闹钟。
-     * 在 nm.notify() 之前调用，使通知直接携带岛参数发出。
-     */
-    private void applyIslandParams(Context ctx, Notification notif,
-            CourseInfo info, int notifId, String notifTag) {
-        applyIslandParams(ctx, notif, info, notifId, notifTag, notifId);
+
+    /** 隐藏时持久化课程快照，恢复展示不再依赖通知栏中存在源通知。 */
+    private static final class Presentation {
+        String key;
+        CourseInfo info;
+        int id;
+        String tag;
+        int automationId;
+        int day;
+        long generation;
+        long triggerMs;
+        long startMs;
+        long endMs;
+        boolean consecutive;
+        int previousId;
+        boolean test;
+        StageDisplayState state = new StageDisplayState();
     }
 
-    /**
-     * @param automationAlarmId 供"逃课/自动化取消"识别的规范 alarmId（调度与静音闹钟都以此为键）。
-     *                          展示 id（notifId）在连续课程换发后可能与它不同，必须区分传递。
-     */
-    private void applyIslandParams(Context ctx, Notification notif,
-            CourseInfo info, int notifId, String notifTag, int automationAlarmId) {
-        try {
-            if (notif.extras == null) notif.extras = new Bundle();
-            SharedPreferences prefs = getConfigPrefs();
-
-            long startMs = computeClassStartMs(info.startTime);
-            long endMs   = computeClassStartMs(info.endTime);
-            long now     = System.currentTimeMillis();
-
-            // 动态计算通知状态：倒计时(0)、上课中(1)、已下课(2)
-            int state = STATE_COUNTDOWN;
-            if (now >= endMs) {
-                state = STATE_FINISHED;
-            } else if (now >= startMs) {
-                state = STATE_ELAPSED;
-            }
-
-            notif.extras.putAll(buildIslandExtras(
-                    info, state, prefs, ctx, notif, notifId, notifTag, automationAlarmId));
-            mNotifCourseOwner.put(notifId, info.courseName);
-            mNotifAutomationById.put(notifId, automationAlarmId);
+    private synchronized void loadPresentations(Context ctx) {
+        if (mPresentationsLoaded) return;
+        mPresentationsLoaded = true;
+        SharedPreferences runtime = ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE);
+        for (java.util.Map.Entry<String, ?> entry : runtime.getAll().entrySet()) {
+            if (!entry.getKey().startsWith(PRESENTATION_PREFIX)) continue;
             try {
-                Intent tableIntent = buildCourseOpenIntent(ctx, prefs);
-                notif.contentIntent = PendingIntent.getActivity(ctx, 1, tableIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                JSONObject json = new JSONObject((String) entry.getValue());
+                Presentation p = new Presentation();
+                p.key = entry.getKey();
+                p.info = new CourseInfo(json.getString("name"), json.getString("start"),
+                        json.getString("end"), json.getString("room"),
+                        json.optString("section"), json.optString("teacher"));
+                p.id = json.getInt("id");
+                p.tag = json.isNull("tag") ? null : json.optString("tag");
+                p.automationId = json.getInt("automation");
+                p.day = json.getInt("day");
+                p.generation = json.getLong("generation");
+                p.triggerMs = json.getLong("trigger");
+                p.startMs = json.getLong("startMs");
+                p.endMs = json.getLong("endMs");
+                p.consecutive = json.optBoolean("consecutive");
+                p.previousId = json.optInt("previous", -1);
+                p.test = json.optBoolean("test");
+                p.state = StageDisplayState.decode(json.optString("state"));
+                mPresentations.put(p.key, p);
+                if (p.day != getTodayDayMarker()) {
+                    stopPresentation(ctx, p);
+                    runtime.edit().remove(p.key).apply();
+                    mPresentations.remove(p.key);
+                } else if (!p.state.terminated) {
+                    mNotifCourseOwner.put(p.id, p.info.courseName);
+                    mNotifAutomationById.put(p.id, p.automationId);
+                    expirePresentationIfDue(ctx, p);
+                    schedulePresentationBoundaries(ctx, p);
+                    schedulePresentationHide(ctx, p);
+                }
             } catch (Exception e) {
-                XposedBridge.log(TAG + ": 课表 intent 解析失败 → " + e.getMessage());
+                runtime.edit().remove(entry.getKey()).apply();
+                XposedBridge.log(TAG + ": 恢复阶段状态失败 -> " + e.getMessage());
             }
+        }
+    }
 
-            String chId  = safeStr(notif.getChannelId());
-            if (startMs > now && (startMs - now) <= 6 * 3600 * 1000L)
-                scheduleIslandAlarm(ctx, info, STATE_ELAPSED,  chId, notifTag, notifId, startMs, automationAlarmId);
-            if (!info.endTime.isEmpty() && endMs > now && (endMs - now) <= 6 * 3600 * 1000L) {
-                // 锚点课程（有连续后续课程）：STATE_FINISHED 延迟 1 秒，确保连续触发 alarm 能先 cancel 它，
-                // 避免"已下课"与"下节倒计时"在相同毫秒 competition 导致短暂闪烁。
-                long finishedTrigger = mConsecutiveAnchors.contains(notifId) ? endMs + 1000 : endMs;
-                scheduleIslandAlarm(ctx, info, STATE_FINISHED, chId, notifTag, notifId, finishedTrigger, automationAlarmId);
-            }
-            if (!mConsecutiveAnchors.contains(notifId))
-                scheduleNotifCancelAlarms(ctx, prefs, notifTag, notifId, now, startMs, endMs);
-            else
-                XposedBridge.log(TAG + ": [锚点课程] id=" + notifId + " 跳过 cancel alarm");
-            XposedBridge.log(TAG + ": applyIslandParams 完成(state=" + state + ") → " + info.courseName + " id=" + notifId);
+    private synchronized void savePresentation(Context ctx, Presentation p) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("name", p.info.courseName).put("start", p.info.startTime)
+                    .put("end", p.info.endTime).put("room", p.info.classroom)
+                    .put("section", p.info.sectionRange).put("teacher", p.info.teacher)
+                    .put("id", p.id).put("tag", p.tag == null ? JSONObject.NULL : p.tag)
+                    .put("automation", p.automationId).put("day", p.day)
+                    .put("generation", p.generation).put("trigger", p.triggerMs)
+                    .put("startMs", p.startMs).put("endMs", p.endMs)
+                    .put("consecutive", p.consecutive).put("previous", p.previousId)
+                    .put("test", p.test).put("state", p.state.encode());
+            ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE)
+                    .edit().putString(p.key, json.toString()).apply();
         } catch (Exception e) {
-            XposedBridge.log(TAG + ": applyIslandParams 失败 → " + e.getMessage());
+            XposedBridge.log(TAG + ": 保存阶段状态失败 -> " + e.getMessage());
+        }
+    }
+
+    private synchronized Presentation preparePresentation(Context ctx, CourseInfo info, int id,
+            String tag, int automationId, long triggerMs, boolean consecutive,
+            int previousId, boolean test) {
+        loadPresentations(ctx);
+        String key = PRESENTATION_PREFIX + getTodayDayMarker() + "_"
+                + (test ? safeStr(tag) : readCourseSource(getConfigPrefs()) + "_" + automationId);
+        Presentation p = mPresentations.get(key);
+        if (p == null) {
+            for (Presentation previous : new java.util.ArrayList<>(mPresentations.values())) {
+                if (test ? previous.test : (!previous.test && previous.id == id)) {
+                    stopPresentation(ctx, previous);
+                    mPresentations.remove(previous.key);
+                    ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE)
+                            .edit().remove(previous.key).apply();
+                }
+            }
+            p = new Presentation();
+            p.key = key;
+            p.info = info;
+            p.id = id;
+            p.tag = tag;
+            p.automationId = automationId;
+            p.day = getTodayDayMarker();
+            p.generation = System.currentTimeMillis();
+            p.startMs = computeClassStartMs(info.startTime);
+            p.endMs = computeClassStartMs(info.endTime);
+            p.test = test;
+            mPresentations.put(key, p);
+            // 升级前的取消闹钟必须停止，且旧广播已在接收端禁用。
+            for (int i = 3; i <= 5; i++) {
+                int requestCode = id * 10 + i;
+                AlarmScheduler.cancelAlarmClock(ctx, createServiceIntent(ACTION_NOTIF_CANCEL),
+                        requestCode, ACTION_NOTIF_CANCEL, TARGET_PACKAGE,
+                        requestCode | 0x60000000, false);
+            }
+            Notification existing = findPresentationNotification(ctx, p);
+            if (existing != null) {
+                int stage = currentPresentationStage(p, System.currentTimeMillis());
+                p.state.enter(stage, true, readStageDurationMs(stage),
+                        System.currentTimeMillis(), true);
+            }
+        }
+        p.triggerMs = triggerMs;
+        p.consecutive = consecutive;
+        p.previousId = previousId;
+        savePresentation(ctx, p);
+        schedulePresentationBoundaries(ctx, p);
+        if (p.state.stage >= 0 && (p.state.enabled != readStageEnabled(p.state.stage)
+                || p.state.durationMs != readStageDurationMs(p.state.stage))) {
+            displayPresentation(ctx, p, true);
+        }
+        return p;
+    }
+
+    private int currentPresentationStage(Presentation p, long now) {
+        return StageDisplayState.stageAt(now, p.startMs, p.endMs);
+    }
+
+    private boolean readStageEnabled(int stage) {
+        return readConfigBool(getConfigPrefs(), ConfigDefaults.stageEnabledKey(stage), true);
+    }
+
+    private long readStageDurationMs(int stage) {
+        return PrefsAccess.readStageDurationMs(getConfigPrefs(), stage);
+    }
+
+    private Intent presentationIntent(Presentation p, String action, int stage) {
+        Intent intent = createServiceIntent(action);
+        intent.setData(Uri.parse("xiaoaiisland://presentation/" + Uri.encode(p.key) + "/" + stage));
+        intent.putExtra("presentation_key", p.key);
+        intent.putExtra("generation", p.generation);
+        intent.putExtra("state", stage);
+        intent.putExtra("revision", p.state.revision);
+        return intent;
+    }
+
+    private synchronized void schedulePresentationBoundaries(Context ctx, Presentation p) {
+        if (p.state.terminated) return;
+        long[] times = {p.triggerMs, p.startMs, p.endMs};
+        for (int stage = 0; stage < times.length; stage++) {
+            String action = stage == 0 ? ACTION_COURSE_REMINDER : ACTION_ISLAND_UPDATE;
+            int requestCode = p.id * 10 + stage;
+            Intent intent = presentationIntent(p, action, stage);
+            if (times[stage] <= System.currentTimeMillis()) {
+                AlarmScheduler.cancelAlarmClock(ctx, intent, requestCode, action,
+                        TARGET_PACKAGE, requestCode | 0x60000000, false);
+                continue;
+            }
+            boolean scheduled = AlarmScheduler.scheduleAlarmClock(ctx, intent, requestCode,
+                    action, TARGET_PACKAGE, requestCode | 0x60000000, false, times[stage]);
+            if (stage == 0 && scheduled) {
+                synchronized (mScheduledIdsLock) {
+                    mScheduledAlarmIds.add(p.automationId);
+                    saveScheduledIds(ctx, KEY_SCHEDULED_ALARM_IDS, mScheduledAlarmIds);
+                }
+            }
+        }
+    }
+
+    private synchronized void schedulePresentationHide(Context ctx, Presentation p) {
+        if (!p.state.visible || p.state.terminated) return;
+        if (p.state.deadlineMs <= System.currentTimeMillis()) {
+            expirePresentationIfDue(ctx, p);
+            return;
+        }
+        int requestCode = p.id * 10 + 3;
+        AlarmScheduler.scheduleAlarmClock(ctx,
+                presentationIntent(p, ACTION_STAGE_HIDE, p.state.stage), requestCode,
+                ACTION_STAGE_HIDE, TARGET_PACKAGE, requestCode | 0x60000000,
+                false, p.state.deadlineMs);
+    }
+
+    private synchronized Notification findPresentationNotification(Context ctx, Presentation p) {
+        android.app.NotificationManager nm = ctx.getSystemService(android.app.NotificationManager.class);
+        if (nm == null) return null;
+        for (StatusBarNotification sbn : nm.getActiveNotifications()) {
+            if (sbn.getId() == p.id && java.util.Objects.equals(sbn.getTag(), p.tag)) {
+                return sbn.getNotification();
+            }
+        }
+        return null;
+    }
+
+    private synchronized void hidePresentation(Context ctx, Presentation p) {
+        android.app.NotificationManager nm = ctx.getSystemService(android.app.NotificationManager.class);
+        if (nm == null) return;
+        if (p.tag == null) nm.cancel(p.id);
+        else nm.cancel(p.tag, p.id);
+    }
+
+    private synchronized void stopPresentation(Context ctx, Presentation p) {
+        if (p.state.terminated) return;
+        p.state.terminate();
+        hidePresentation(ctx, p);
+        for (int stage = 0; stage < 3; stage++) {
+            String action = stage == 0 ? ACTION_COURSE_REMINDER : ACTION_ISLAND_UPDATE;
+            int requestCode = p.id * 10 + stage;
+            AlarmScheduler.cancelAlarmClock(ctx, presentationIntent(p, action, stage),
+                    requestCode, action, TARGET_PACKAGE, requestCode | 0x60000000, false);
+            requestCode = p.id * 10 + 3;
+            AlarmScheduler.cancelAlarmClock(ctx, presentationIntent(p, ACTION_STAGE_HIDE, stage),
+                    requestCode, ACTION_STAGE_HIDE, TARGET_PACKAGE, requestCode | 0x60000000, false);
+        }
+        mNotifCourseOwner.remove(p.id);
+        mNotifAutomationById.remove(p.id);
+        savePresentation(ctx, p);
+    }
+
+    private synchronized void expirePresentationIfDue(Context ctx, Presentation p) {
+        if (p.state.expire(p.state.stage, p.state.revision, System.currentTimeMillis())
+                == StageDisplayState.Effect.HIDE) {
+            hidePresentation(ctx, p);
+            if (p.state.stage == STATE_FINISHED) p.state.terminate();
+            savePresentation(ctx, p);
+        }
+    }
+
+    private synchronized void displayPresentation(Context ctx, Presentation p, boolean configurationChange) {
+        long now = System.currentTimeMillis();
+        if (p.state.terminated || p.day != getTodayDayMarker() || now < p.triggerMs) return;
+        if (!p.test && isAutomationSkippedToday(ctx, p.automationId)) {
+            stopPresentation(ctx, p);
+            return;
+        }
+        expirePresentationIfDue(ctx, p);
+        if (p.state.terminated) return;
+        if (p.state.visible && findPresentationNotification(ctx, p) == null) {
+            stopPresentation(ctx, p);
+            return;
+        }
+        int stage = currentPresentationStage(p, now);
+        // 相邻课程的先后顺序由实际开启阶段决定，不依赖两个闹钟的到达顺序。
+        for (Presentation next : mPresentations.values()) {
+            if (next.consecutive && next.previousId == p.automationId
+                    && StageDisplayState.canTakeOver(now, next.triggerMs, next.state.terminated,
+                            readStageEnabled(currentPresentationStage(next, now)))) {
+                stopPresentation(ctx, p);
+                return;
+            }
+        }
+        StageDisplayState.Effect effect = p.state.enter(stage, readStageEnabled(stage),
+                readStageDurationMs(stage), now, configurationChange);
+        if (effect == StageDisplayState.Effect.HIDE) hidePresentation(ctx, p);
+        if (effect == StageDisplayState.Effect.SHOW_ALERT || effect == StageDisplayState.Effect.SHOW_SILENT) {
+            if (p.consecutive) {
+                for (Presentation previous : mPresentations.values()) {
+                    if (previous.automationId == p.previousId && !previous.test && !previous.state.terminated) {
+                        stopPresentation(ctx, previous);
+                    }
+                }
+            }
+            publishPresentation(ctx, p, effect == StageDisplayState.Effect.SHOW_ALERT);
+        }
+        savePresentation(ctx, p);
+        schedulePresentationHide(ctx, p);
+    }
+
+    private void publishPresentation(Context ctx, Presentation p, boolean alert) {
+        android.app.NotificationManager nm = ctx.getSystemService(android.app.NotificationManager.class);
+        if (nm == null) return;
+        String channel = alert ? "xiaoai_course_reminder_alert" : ISLAND_UPDATE_CHANNEL;
+        if (nm.getNotificationChannel(channel) == null) {
+            android.app.NotificationChannel nc = new android.app.NotificationChannel(channel,
+                    alert ? "课程提醒" : "岛状态更新",
+                    alert ? android.app.NotificationManager.IMPORTANCE_HIGH : android.app.NotificationManager.IMPORTANCE_LOW);
+            nc.enableVibration(alert);
+            if (!alert) nc.setSound(null, null);
+            nm.createNotificationChannel(nc);
+        }
+        Intent dismiss = presentationIntent(p, ACTION_PRESENTATION_DISMISS, p.state.stage);
+        PendingIntent deleteIntent = PendingIntent.getService(ctx, p.id, dismiss,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        String title = p.state.stage == STATE_COUNTDOWN
+                ? "[" + p.info.courseName + "]快到了，提前准备一下吧" : p.info.courseName;
+        Notification notification = new Notification.Builder(ctx, channel)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(p.info.startTime + " - " + p.info.endTime + "  " + p.info.classroom)
+                .setAutoCancel(true).setOnlyAlertOnce(!alert).setDeleteIntent(deleteIntent).build();
+        notification.extras.putString("xiaoai.test.course_name", p.info.courseName);
+        notification.extras.putString("xiaoai.test.start_time", p.info.startTime);
+        notification.extras.putString("xiaoai.test.end_time", p.info.endTime);
+        notification.extras.putString("xiaoai.test.classroom", p.info.classroom);
+        notification.extras.putBoolean(KEY_TEST_NOTIF_MARKER, p.test);
+        notification.extras.putAll(buildIslandExtras(p.info, p.state.stage, getConfigPrefs(),
+                ctx, notification, p.id, p.tag, p.automationId));
+        try {
+            notification.contentIntent = PendingIntent.getActivity(ctx, 1, buildCourseOpenIntent(ctx, getConfigPrefs()),
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": 构建课程跳转失败 -> " + e.getMessage());
+        }
+        if (p.tag == null) nm.notify(p.id, notification);
+        else nm.notify(p.tag, p.id, notification);
+        mNotifCourseOwner.put(p.id, p.info.courseName);
+        mNotifAutomationById.put(p.id, p.automationId);
+        XposedBridge.log(TAG + ": 阶段显示 state=" + p.state.stage + " alert=" + alert + " id=" + p.id);
+    }
+
+    private synchronized void handlePresentationUpdate(Context ctx, Intent intent) {
+        loadPresentations(ctx);
+        Presentation p = mPresentations.get(intent.getStringExtra("presentation_key"));
+        if (p == null || p.generation != intent.getLongExtra("generation", -1)
+                || p.state.terminated || intent.getIntExtra("state", -1) < p.state.stage) return;
+        displayPresentation(ctx, p, false);
+    }
+
+    private synchronized void handlePresentationEnd(Context ctx, Intent intent, boolean dismissed) {
+        loadPresentations(ctx);
+        Presentation p = mPresentations.get(intent.getStringExtra("presentation_key"));
+        if (p == null || p.generation != intent.getLongExtra("generation", -1)) return;
+        if (dismissed) {
+            // 旧阶段的清除事件不能终止已恢复的通知。
+            if (p.state.stage != intent.getIntExtra("state", -1)
+                    || p.state.revision != intent.getLongExtra("revision", -1)) return;
+            stopPresentation(ctx, p);
+        } else if (p.state.expire(intent.getIntExtra("state", -1),
+                intent.getLongExtra("revision", -1), System.currentTimeMillis())
+                == StageDisplayState.Effect.HIDE) {
+            hidePresentation(ctx, p);
+            if (p.state.stage == STATE_FINISHED) p.state.terminate();
+            savePresentation(ctx, p);
+        }
+    }
+
+    private synchronized void refreshPresentationSettings(Context ctx) {
+        loadPresentations(ctx);
+        long now = System.currentTimeMillis();
+        for (Presentation p : new java.util.ArrayList<>(mPresentations.values())) {
+            if (p.state.terminated || p.day != getTodayDayMarker() || now < p.triggerMs) continue;
+            if (p.endMs > 0 && now >= p.endMs && (!p.state.hasShown
+                    || now > p.endMs + readStageDurationMs(STATE_FINISHED))) continue;
+            displayPresentation(ctx, p, true);
+            schedulePresentationBoundaries(ctx, p);
+        }
+    }
+
+    private synchronized void terminatePresentations(Context ctx, int automationId, int notificationId) {
+        loadPresentations(ctx);
+        for (Presentation p : new java.util.ArrayList<>(mPresentations.values())) {
+            if (p.automationId == automationId || p.id == notificationId) stopPresentation(ctx, p);
+        }
+    }
+
+    private synchronized void prunePresentations(Context ctx, java.util.Set<Integer> validIds) {
+        loadPresentations(ctx);
+        for (Presentation p : new java.util.ArrayList<>(mPresentations.values())) {
+            boolean sameDay = p.day == getTodayDayMarker();
+            boolean sameSource = p.key.startsWith(PRESENTATION_PREFIX + p.day + "_"
+                    + readCourseSource(getConfigPrefs()) + "_");
+            if (sameDay && (p.test || (sameSource && validIds.contains(p.automationId)))) continue;
+            stopPresentation(ctx, p);
+            mPresentations.remove(p.key);
+            ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE).edit().remove(p.key).apply();
         }
     }
 
@@ -2120,159 +2111,9 @@ public class MainHook {
     private static final int STATE_COUNTDOWN = 0; // 倒计时（上课前）
     private static final int STATE_ELAPSED   = 1; // 正计时（上课中）
     private static final int STATE_FINISHED  = 2; // 正计时（已下课）
-
-
-    /**
-     * 利用 AlarmManager.setExactAndAllowWhileIdle 在指定时刻发送岛状态更新广播。
-     * 运行在 voiceassist 进程内，借用其 SCHEDULE_EXACT_ALARM 权限，精确唤醒 Doze。
-     *
-     * @param automationAlarmId 供"逃课/自动化取消"识别的规范 alarmId，随闹钟持久化，
-     *                          进程重启后仍能保持一致（展示 id 可能被连续课程换发成 newId）。
-     */
-    private void scheduleIslandAlarm(Context ctx, CourseInfo info, int state,
-            String channelId, String tag, int id, long triggerMs, int automationAlarmId) {
-        long delayMs = triggerMs - System.currentTimeMillis();
-        if (delayMs <= 0) return;
-
-        if (TARGET_PACKAGE.equals(ctx.getPackageName())) {
-            // voiceassist 进程：用精确闹钟，可唤醒 Doze
-            try {
-                Intent intent = createServiceIntent(ACTION_ISLAND_UPDATE);
-                intent.putExtra("course_name", info.courseName);
-                intent.putExtra("start_time",  info.startTime);
-                intent.putExtra("end_time",    info.endTime);
-                intent.putExtra("classroom",   info.classroom);
-                intent.putExtra("section_range", info.sectionRange);
-                intent.putExtra("teacher", info.teacher);
-                intent.putExtra("state",       state);
-                intent.putExtra("channel_id",  channelId);
-                intent.putExtra("notif_tag",   tag);
-                intent.putExtra("notif_id",    id);
-                intent.putExtra("automation_alarm_id", automationAlarmId);
-                int reqCode = id * 10 + state;
-                boolean scheduled = AlarmScheduler.scheduleAlarmClock(
-                        ctx, intent, reqCode,
-                        ACTION_ISLAND_UPDATE, TARGET_PACKAGE, reqCode | 0x60000000,
-                        false, triggerMs);
-                if (!scheduled) {
-                    XposedBridge.log(TAG + ": scheduleIslandAlarm 跳过：AlarmManager 不可用");
-                    return;
-                }
-                XposedBridge.log(TAG + ": AlarmManager(AlarmClock) 已设定 state=" + state
-                        + " in " + (delayMs / 1000) + "s");
-            } catch (Exception e) {
-                XposedBridge.log(TAG + ": scheduleIslandAlarm 失败 → " + e.getMessage());
-            }
-        } else {
-            // 模块自身进程（测试通知）：前台运行，Handler 足够
-            final CourseInfo fi = info;
-            final Context fc = ctx;
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                android.app.NotificationManager nm =
-                        fc.getSystemService(android.app.NotificationManager.class);
-                android.service.notification.StatusBarNotification src = null;
-                for (android.service.notification.StatusBarNotification sbn
-                        : nm.getActiveNotifications()) {
-                    if (sbn.getId() == id) { src = sbn.getNotification() != null ? sbn : null; break; }
-                }
-                if (src == null) return;
-                SharedPreferences prefs = getConfigPrefs();
-                sendIslandUpdate(fi, state, fc, src.getNotification(), nm, tag, id,
-                        automationAlarmId, prefs);
-            }, delayMs);
-            XposedBridge.log(TAG + ": Handler 已设定 state=" + state + " in " + (delayMs / 1000) + "s");
-        }
-    }
-
-    /**
-     * 在三个时间点各调度一个 ACTION_NOTIF_CANCEL 闹钟，先触发者取消通知（其余成为 no-op）。
-     * 时间点：pre→通知发出后，active→上课后，post→下课后。val=-1 表示跳过该阶段。
-     * 使用 setAlarmClock 保证精确触发，替代原 Handler.postDelayed。
-     */
-    private void scheduleNotifCancelAlarms(Context ctx,
-            android.content.SharedPreferences prefs,
-            String tag, int id,
-            long notifPostedMs, long startMs, long endMs) {
-        if (ctx == null) return;
-        final String[] phases = {"pre", "active", "post"};
-        final long[]   baseMs = {notifPostedMs, startMs, endMs};
-        for (int i = 0; i < 3; i++) {
-            int val = readConfigInt(prefs, "to_notif_val_" + phases[i], ConfigDefaults.TIMEOUT_VALUE);
-            String unit = readConfigString(prefs, "to_notif_unit_" + phases[i], ConfigDefaults.TIMEOUT_UNIT);
-            if (val <= 0 || baseMs[i] <= 0) continue;
-            long delayMs;
-            if ("s".equals(unit)) {
-                delayMs = (long) val * 1000L;
-            } else if ("h".equals(unit)) {
-                delayMs = (long) val * 3_600_000L;
-            } else {
-                delayMs = (long) val * 60_000L;
-            }
-            long triggerMs = baseMs[i] + delayMs;
-            if (triggerMs <= System.currentTimeMillis()) continue;
-            // reqCode: id * 10 + state 已用 0-2，+3+i 用于 cancel（3/4/5），不冲突
-            int reqCode = id * 10 + 3 + i;
-            Intent ci = createServiceIntent(ACTION_NOTIF_CANCEL);
-            ci.putExtra("notif_id",  id);
-            ci.putExtra("notif_tag", tag);
-            ci.putExtra("phase",     phases[i]);
-            boolean scheduled = AlarmScheduler.scheduleAlarmClock(
-                    ctx, ci, reqCode,
-                    ACTION_NOTIF_CANCEL, TARGET_PACKAGE, reqCode | 0x60000000,
-                    false, triggerMs);
-            if (!scheduled) continue;
-            XposedBridge.log(TAG + ": 通知取消 AlarmClock [" + phases[i] + "] in "
-                    + (triggerMs - System.currentTimeMillis()) / 1000 + "s");
-        }
-    }
-
-    /**
-     * 岛状态更新专用渠道 ID（IMPORTANCE_LOW：无声无震，渠道级保证，不依赖 FLAG_ONLY_ALERT_ONCE）。
-     * 与 voiceassist 自带的 COURSE_SCHEDULER_REMINDER_sound 完全独立，不会被其 importance 覆盖。
-     */
     private static final String ISLAND_UPDATE_CHANNEL = "xiaoai_island_update_silent";
 
-    /**
-     * 构建并发送更新后的岛通知。
-     *
-     * @param automationAlarmId 供"逃课/自动化取消"识别的规范 alarmId，随 ACTION_ISLAND_UPDATE
-     *                          闹钟持久化传入；展示 id 被连续课程换发成 newId 后仍保持一致。
-     */
-    private void sendIslandUpdate(CourseInfo info, int state,
-            Context ctx, Notification src,
-            android.app.NotificationManager nm, String tag, int id,
-            int automationAlarmId, android.content.SharedPreferences prefs) {
-        try {
-            // 确保静音更新渠道存在（IMPORTANCE_LOW = 无声无震，不受 voiceassist 原渠道影响）
-            if (nm.getNotificationChannel(ISLAND_UPDATE_CHANNEL) == null) {
-                android.app.NotificationChannel uch = new android.app.NotificationChannel(
-                        ISLAND_UPDATE_CHANNEL, "岛状态更新",
-                        android.app.NotificationManager.IMPORTANCE_LOW);
-                uch.setSound(null, null);   // 渠道无声
-                uch.enableVibration(false); // 渠道无震
-                nm.createNotificationChannel(uch);
-            }
-            Notification n = new Notification.Builder(ctx, ISLAND_UPDATE_CHANNEL)
-                    .setSmallIcon(src.getSmallIcon())
-                    .setContentTitle(info.courseName)
-                    .setContentText(info.startTime
-                            + (info.endTime.isEmpty() ? "" : " | " + info.endTime)
-                            + (info.classroom.isEmpty() ? "" : " " + info.classroom))
-                    .setAutoCancel(true)
-                    .setOnlyAlertOnce(true)   // 双重保险
-                    .build();
-            if (n.extras == null) n.extras = new Bundle();
-            n.extras.putAll(buildIslandExtras(
-                    info, state, prefs, ctx, n, id, tag, automationAlarmId));
-            mNotifAutomationById.put(id, automationAlarmId);
-            n.contentIntent = src.contentIntent;
-            if (tag != null) nm.notify(tag, id, n);
-            else             nm.notify(id, n);
-            XposedBridge.log(TAG + ": 岛状态更新已发送 state=" + state + " id=" + id);
-        } catch (Exception e) {
-            XposedBridge.log(TAG + ": 岛状态更新失败 state=" + state + " → " + e.getMessage());
-        }
-    }
+
 
     /**
      * 统一构建超级岛 JSON。三种状态的差异通过 state 参数区分：
@@ -2322,18 +2163,6 @@ public class MainHook {
                 + safeStr(teacher)).hashCode()) & 0x00FFFFFF;
     }
 
-    /**
-     * 连续课程"换发"后实际展示通知使用的派生 id。
-     * 必须与 ACTION_COURSE_REMINDER 连续分支保持一致，否则调度侧的残留清理
-     * (cancelStaleNotifications) 会因 id 对不上而误删刚换发的岛通知。
-     */
-    private static int buildConsecutiveNotifId(
-            String courseName, String startTime, String endTime, String classroom) {
-        return Math.abs((safeStr(courseName)
-                + safeStr(startTime)
-                + safeStr(endTime)
-                + safeStr(classroom)).hashCode());
-    }
 
 
     private void bootstrapRemotePrefsUnified(Context ctx) {
@@ -2471,6 +2300,10 @@ public class MainHook {
             mObservedRemotePrefs = remote;
             mRemotePrefsListener = (sp, key) -> {
                 refreshRuntimeSwitchesFromPrefs(sp);
+                if (key == null || key.startsWith("stage_enabled_")
+                        || key.startsWith("to_island_")) {
+                    refreshPresentationSettings(ctx);
+                }
                 if (isRescheduleRelatedKey(key)) {
                     safeReschedule(ctx, "remote_prefs_changed:" + key, false);
                 }

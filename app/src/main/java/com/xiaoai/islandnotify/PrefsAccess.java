@@ -59,6 +59,17 @@ public final class PrefsAccess {
         return target.getBoolean(key, ConfigDefaults.boolDefault(key, fallback));
     }
 
+    public static long readStageDurationMs(SharedPreferences prefs, int stage) {
+        String phase = ConfigDefaults.stagePhase(stage);
+        int value = readConfigInt(prefs, "to_island_val_" + phase, ConfigDefaults.TIMEOUT_VALUE);
+        String unit = readConfigString(prefs, "to_island_unit_" + phase, ConfigDefaults.TIMEOUT_UNIT);
+        if (value <= 0) {
+            value = ConfigDefaults.TIMEOUT_VALUE;
+            unit = ConfigDefaults.TIMEOUT_UNIT;
+        }
+        return (long) value * ("s".equals(unit) ? 1000L : "h".equals(unit) ? 3600000L : 60000L);
+    }
+
     public static String readConfigString(SharedPreferences prefs, String key, String fallback) {
         SharedPreferences target = resolve(prefs);
         String value = target.getString(key, ConfigDefaults.stringDefault(key, fallback));

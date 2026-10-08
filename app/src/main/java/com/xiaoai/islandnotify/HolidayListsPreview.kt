@@ -16,6 +16,10 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 )
 @Preview(name = "假期列表 · 1.5 倍字体", widthDp = 320, heightDp = 2400, fontScale = 1.5f)
 @Preview(name = "假期列表 · 2 倍字体", widthDp = 320, heightDp = 3000, fontScale = 2f)
+@Preview(
+    name = "假期列表 · 深色 2 倍字体", widthDp = 320, heightDp = 3000, fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
 @Preview(name = "假期列表 · 宽屏", widthDp = 600, heightDp = 1000)
 @Composable
 private fun HolidayListsPreview() {
@@ -61,6 +65,12 @@ private fun HolidayPreviewContent(empty: Boolean) {
     MiuixTheme(controller = controller) {
         RouteScaffold(title = "假期/调休", canBack = true, onBack = {}) { modifier, padding ->
             SettingsPage(modifier = modifier, pagePadding = padding) {
+                item(key = "holiday_data") {
+                    HolidayDataSection(
+                        year = 2026,
+                        onSelectYear = {}, onFetch = {}, onClear = {},
+                    )
+                }
                 item(key = "holidays") {
                     HolidayEntriesSection(
                         title = "节假日",

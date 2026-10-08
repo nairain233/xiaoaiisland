@@ -43,6 +43,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -2154,59 +2155,45 @@ private fun HolidayTab(
             text = "节假日当天不发课前提醒；调休工作日按指定周次及星期发提醒。",
         )
         item(key = "section_0") {
-            SettingsSection {
-                ArrowPreference(
-                    title = "年份",
-                    endActions = { PreferenceValue(state.year.toString()) },
-                    onClick = { showYearDialog = true },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                Toast.makeText(activity, "正在获取...", Toast.LENGTH_SHORT).show()
-                                val result =
-                                    withContext(Dispatchers.IO) { fetchHolidayEntries(state.year) }
-                                result.error?.let {
-                                    Toast.makeText(activity, "获取失败：$it", Toast.LENGTH_SHORT)
-                                        .show()
-                                    return@launch
-                                }
-                                val entries = result.entries
-                                if (entries.isEmpty()) {
-                                    Toast.makeText(
-                                        activity,
-                                        "${state.year}年暂无数据",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    return@launch
-                                }
-                                HolidayManager.mergeAndSave(state.year, entries)
-                                activity.uiSyncHolidayToHook(state.year)
-                                entries.forEach { e ->
-                                    val endDate =
-                                        if (e.endDate.isNullOrEmpty()) e.date else e.endDate
-                                    activity.uiRescheduleIfCoversToday(e.date, endDate)
-                                }
-                                state.loadFrom(activity)
-                                Toast.makeText(
-                                    activity,
-                                    "获取完成：节假日 ${result.holidayDays} 天，调休 ${result.workswapDays} 天",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("网络获取") }
-                    Button(
-                        modifier = Modifier.weight(1f),
-                        onClick = { showClearYearDialog = true },
-                    ) { Text("清除本年") }
-                }
-            }
+            HolidayDataSection(
+                year = state.year,
+                onSelectYear = { showYearDialog = true },
+                onFetch = {
+                    scope.launch {
+                        Toast.makeText(activity, "正在获取...", Toast.LENGTH_SHORT).show()
+                        val result =
+                            withContext(Dispatchers.IO) { fetchHolidayEntries(state.year) }
+                        result.error?.let {
+                            Toast.makeText(activity, "获取失败：$it", Toast.LENGTH_SHORT)
+                                .show()
+                            return@launch
+                        }
+                        val entries = result.entries
+                        if (entries.isEmpty()) {
+                            Toast.makeText(
+                                activity,
+                                "${state.year}年暂无数据",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@launch
+                        }
+                        HolidayManager.mergeAndSave(state.year, entries)
+                        activity.uiSyncHolidayToHook(state.year)
+                        entries.forEach { e ->
+                            val endDate =
+                                if (e.endDate.isNullOrEmpty()) e.date else e.endDate
+                            activity.uiRescheduleIfCoversToday(e.date, endDate)
+                        }
+                        state.loadFrom(activity)
+                        Toast.makeText(
+                            activity,
+                            "获取完成：节假日 ${result.holidayDays} 天，调休 ${result.workswapDays} 天",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                onClear = { showClearYearDialog = true },
+            )
         }
 
         item(key = "节假日") {
@@ -2430,6 +2417,46 @@ private fun HolidayTab(
                 ).show()
             },
         )
+    }
+}
+
+@Composable
+internal fun HolidayDataSection(
+    year: Int,
+    onSelectYear: () -> Unit,
+    onFetch: () -> Unit,
+    onClear: () -> Unit,
+) {
+    SettingsSection {
+        ArrowPreference(
+            title = "年份",
+            endActions = { PreferenceValue(year.toString()) },
+            onClick = onSelectYear,
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Button(
+                onClick = onFetch,
+                modifier = Modifier.fillMaxWidth(),
+                minHeight = 48.dp,
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text("获取节假日数据", textAlign = TextAlign.Center)
+            }
+            TextButton(
+                text = "清除本年数据",
+                onClick = onClear,
+                minHeight = 48.dp,
+                colors = ButtonDefaults.textButtonColors(
+                    color = Color.Transparent,
+                    disabledColor = Color.Transparent,
+                    textColor = MiuixTheme.colorScheme.onSurfaceSecondary,
+                ),
+            )
+        }
     }
 }
 

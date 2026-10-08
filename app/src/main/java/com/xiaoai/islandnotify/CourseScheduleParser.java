@@ -84,6 +84,7 @@ public final class CourseScheduleParser {
 
         JSONArray sectionTimesArray = parseSectionTimesArray(setting);
         java.util.Map<Integer, SectionTime> sectionTimes = buildSectionTimeMap(sectionTimesArray);
+        sectionTimes.putAll(buildSectionTimeMap(selectComboSectionTimes(setting, todayDateString())));
 
         JSONArray coursesArray = data.optJSONArray("courses");
         List<CourseSlot> courses = new ArrayList<>();
@@ -113,6 +114,7 @@ public final class CourseScheduleParser {
 
             String stable = data.optJSONArray("courses")
                     + sectionTimesStableRaw(setting)
+                    + String.valueOf(setting.optJSONArray("sectionTimeRules"))
                     + setting.optString("totalWeek")
                     + setting.optString("weekStart")
                     + presentWeek
@@ -152,6 +154,33 @@ public final class CourseScheduleParser {
             sectionTimes.put(sectionIndex, new SectionTime(startTime, endTime));
         }
         return sectionTimes;
+    }
+
+    /**
+     * 选择第一条覆盖指定日期的组合作息规则；区间两端均包含。
+     * 镜像日期为 yyyy-MM-dd，可按字典序比较；日期参数用于确定性验证跨日切换。
+     */
+    static JSONArray selectComboSectionTimes(JSONObject setting, String date) {
+        JSONArray rules = setting.optJSONArray("sectionTimeRules");
+        if (rules == null) return null;
+        for (int i = 0; i < rules.length(); i++) {
+            JSONObject rule = rules.optJSONObject(i);
+            if (rule == null) continue;
+            String start = rule.optString("s", "");
+            String end = rule.optString("e", "");
+            if (start.isEmpty() || end.isEmpty()) continue;
+            if (date.compareTo(start) < 0 || date.compareTo(end) > 0) continue;
+            return rule.optJSONArray("t");
+        }
+        return null;
+    }
+
+    private static String todayDateString() {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        return String.format(java.util.Locale.US, "%04d-%02d-%02d",
+                c.get(java.util.Calendar.YEAR),
+                c.get(java.util.Calendar.MONTH) + 1,
+                c.get(java.util.Calendar.DAY_OF_MONTH));
     }
 
     private static CourseSlot parseCourseSlot(JSONObject course, java.util.Map<Integer, SectionTime> sectionTimes) {

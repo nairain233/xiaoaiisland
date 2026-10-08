@@ -160,13 +160,13 @@ public final class ConfigDefaults {
 
     public static boolean isConfigKey(String key) {
         if (key == null || key.isEmpty()) return false;
+        if (ReminderConfig.isReminderKey(key)) return true;
         if (key.startsWith("tpl_") || key.startsWith("to_island_")
                 || key.startsWith("to_notif_") || key.startsWith("stage_enabled_")) return true;
         if ("migration_config_v1_done".equals(key)
                 || "migration_config_v2_done".equals(key)
                 || "notif_dismiss_trigger".equals(key)) return true;
-        return "reminder_minutes_before".equals(key)
-                || "mute_enabled".equals(key)
+        return "mute_enabled".equals(key)
                 || "mute_mins_before".equals(key)
                 || "unmute_enabled".equals(key)
                 || "unmute_mins_after".equals(key)

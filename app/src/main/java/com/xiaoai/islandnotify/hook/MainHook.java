@@ -1,6 +1,5 @@
 package com.xiaoai.islandnotify.hook;
 
-import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -24,6 +23,7 @@ import com.xiaoai.islandnotify.CourseScheduleParser;
 import com.xiaoai.islandnotify.HolidayManager;
 import com.xiaoai.islandnotify.MiuiSettingsInvoker;
 import com.xiaoai.islandnotify.PrefsAccess;
+import com.xiaoai.islandnotify.ReminderConfig;
 import com.xiaoai.islandnotify.TimeTableHelperInvoker;
 import com.xiaoai.islandnotify.TotalWeekReceiver;
 import com.xiaoai.islandnotify.modernhook.XC_MethodHook;
@@ -120,10 +120,6 @@ public class MainHook {
     /** 拾光镜像存储键（写入 voiceassist 自身独立 SP） */
     private static final String KEY_SHIGUANG_MIRROR_BEAN = "shiguang_mirror_week_course_bean";
     private static final String KEY_SHIGUANG_MIRROR_HASH = "shiguang_mirror_week_course_hash";
-    /** 课前提醒分钟数配置键（存入 island_custom SP） */
-    private static final String KEY_REMINDER_MINUTES = "reminder_minutes_before";
-    /** 课前提醒默认提前分钟数 */
-    private static final int DEFAULT_REMINDER_MINUTES = ConfigDefaults.REMINDER_MINUTES;
     /** CourseData.xml FileObserver，跨进程写入时仍能感知 */
     private android.os.FileObserver mCourseDataObserver;
     /** CourseData 变化防抖延迟（ms）：合并同一次写入触发的多个 inotify 事件 */
@@ -435,7 +431,7 @@ public class MainHook {
                             XposedBridge.log(TAG + ": 即将发出测试通知 → " + tCourseName + " @" + tStartTime);
                             CourseInfo tInfo = new CourseInfo(tCourseName, tStartTime, tEndTime, tClassroom, tSection, tTeacher);
                             Presentation test = preparePresentation(context, tInfo, tNotifId,
-                                    tNotifTag, tNotifId, nowEpochMs, false, -1, true);
+                                    tNotifTag, tNotifId, nowEpochMs, true);
                             displayPresentation(context, test, false);
                             XposedBridge.log(TAG + ": 已在目标进程发出测试通知 id=" + tNotifId);
                             // 测试通知按用户设定的时间逻辑调度静音/取消静音闹钟：
@@ -951,9 +947,8 @@ public class MainHook {
                     ctx.sendBroadcast(twIntent);
                 }
             }
-            int reminderMinutes = readConfigInt(prefs, KEY_REMINDER_MINUTES, DEFAULT_REMINDER_MINUTES);
+            ReminderConfig reminderConfig = ReminderConfig.read(prefs);
             long nowMs = System.currentTimeMillis();
-            long reminderMs = (long) reminderMinutes * 60_000L;
 
             java.util.List<TodayCourseSlot> todaySlots = new java.util.ArrayList<>();
             for (CourseScheduleParser.CourseSlot course : parsed.courses) {
@@ -967,10 +962,7 @@ public class MainHook {
             todaySlots.sort(java.util.Comparator.comparingLong(slot -> slot.startMs));
 
             int scheduledCount = 0;
-            int previousId = -1;
-            boolean previousSkipped = false;
-            for (int si = 0; si < todaySlots.size(); si++) {
-                TodayCourseSlot slot = todaySlots.get(si);
+            for (TodayCourseSlot slot : todaySlots) {
                 CourseScheduleParser.CourseSlot course = slot.slot;
                 CourseInfo info = new CourseInfo(course.courseName, course.startTime, course.endTime,
                         course.classroom, course.sectionRange, course.teacher);
@@ -978,26 +970,13 @@ public class MainHook {
                         course.endTime, course.classroom, course.sectionRange, course.teacher);
                 validAlarmIds.add(alarmId);
                 boolean skipped = isAutomationSkippedToday(ctx, alarmId);
-                int predecessor = previousId;
-                boolean predecessorSkipped = previousSkipped;
-                previousId = alarmId;
-                previousSkipped = skipped;
                 if (skipped) {
                     terminatePresentations(ctx, alarmId, alarmId);
                     continue;
                 }
-                long triggerMs = slot.startMs - reminderMs;
-                boolean consecutive = false;
-                if (si > 0) {
-                    long previousEnd = todaySlots.get(si - 1).endMs;
-                    long gap = slot.startMs - previousEnd;
-                    if (gap >= 0 && gap <= reminderMs) {
-                        triggerMs = previousEnd;
-                        consecutive = !predecessorSkipped;
-                    }
-                }
+                long triggerMs = reminderConfig.triggerAt(slot.startMs, course.firstSection);
                 Presentation presentation = preparePresentation(ctx, info, alarmId, null, alarmId,
-                        triggerMs, consecutive, predecessor, false);
+                        triggerMs, false);
                 if (presentation.state.terminated) continue;
                 schedulePresentationBoundaries(ctx, presentation);
                 if (presentation.state.visible) {
@@ -1017,7 +996,8 @@ public class MainHook {
             }
             prunePresentations(ctx, validAlarmIds);
             XposedBridge.log(TAG + ": 今日课前提醒已调度 " + scheduledCount
-                    + " 条（第" + currentWeek + " 周，提前 " + reminderMinutes + " 分钟）");
+                    + " 条（第" + currentWeek + " 周，默认提前 " + reminderConfig.defaultMinutes
+                    + " 分钟，节次规则 " + reminderConfig.sectionMinutes.size() + " 条）");
 
             cancelStaleNotifications(ctx, validAlarmIds);
         } catch (Throwable e) {
@@ -1722,8 +1702,6 @@ public class MainHook {
         long triggerMs;
         long startMs;
         long endMs;
-        boolean consecutive;
-        int previousId;
         boolean test;
         StageDisplayState state = new StageDisplayState();
     }
@@ -1749,8 +1727,6 @@ public class MainHook {
                 p.triggerMs = json.getLong("trigger");
                 p.startMs = json.getLong("startMs");
                 p.endMs = json.getLong("endMs");
-                p.consecutive = json.optBoolean("consecutive");
-                p.previousId = json.optInt("previous", -1);
                 p.test = json.optBoolean("test");
                 p.state = StageDisplayState.decode(json.optString("state"));
                 mPresentations.put(p.key, p);
@@ -1782,7 +1758,6 @@ public class MainHook {
                     .put("automation", p.automationId).put("day", p.day)
                     .put("generation", p.generation).put("trigger", p.triggerMs)
                     .put("startMs", p.startMs).put("endMs", p.endMs)
-                    .put("consecutive", p.consecutive).put("previous", p.previousId)
                     .put("test", p.test).put("state", p.state.encode());
             ctx.getSharedPreferences(PREFS_RUNTIME_NAME, Context.MODE_PRIVATE)
                     .edit().putString(p.key, json.toString()).apply();
@@ -1792,8 +1767,7 @@ public class MainHook {
     }
 
     private synchronized Presentation preparePresentation(Context ctx, CourseInfo info, int id,
-            String tag, int automationId, long triggerMs, boolean consecutive,
-            int previousId, boolean test) {
+            String tag, int automationId, long triggerMs, boolean test) {
         loadPresentations(ctx);
         String key = PRESENTATION_PREFIX + getTodayDayMarker() + "_"
                 + (test ? safeStr(tag) : readCourseSource(getConfigPrefs()) + "_" + automationId);
@@ -1834,8 +1808,6 @@ public class MainHook {
             }
         }
         p.triggerMs = triggerMs;
-        p.consecutive = consecutive;
-        p.previousId = previousId;
         savePresentation(ctx, p);
         schedulePresentationBoundaries(ctx, p);
         if (p.state.stage >= 0 && (p.state.enabled != readStageEnabled(p.state.stage)
@@ -1962,26 +1934,10 @@ public class MainHook {
             return;
         }
         int stage = currentPresentationStage(p, now);
-        // 相邻课程的先后顺序由实际开启阶段决定，不依赖两个闹钟的到达顺序。
-        for (Presentation next : mPresentations.values()) {
-            if (next.consecutive && next.previousId == p.automationId
-                    && StageDisplayState.canTakeOver(now, next.triggerMs, next.state.terminated,
-                            readStageEnabled(currentPresentationStage(next, now)))) {
-                stopPresentation(ctx, p);
-                return;
-            }
-        }
         StageDisplayState.Effect effect = p.state.enter(stage, readStageEnabled(stage),
                 readStageDurationMs(stage), now, configurationChange);
         if (effect == StageDisplayState.Effect.HIDE) hidePresentation(ctx, p);
         if (effect == StageDisplayState.Effect.SHOW_ALERT || effect == StageDisplayState.Effect.SHOW_SILENT) {
-            if (p.consecutive) {
-                for (Presentation previous : mPresentations.values()) {
-                    if (previous.automationId == p.previousId && !previous.test && !previous.state.terminated) {
-                        stopPresentation(ctx, previous);
-                    }
-                }
-            }
             publishPresentation(ctx, p, effect == StageDisplayState.Effect.SHOW_ALERT);
         }
         savePresentation(ctx, p);
@@ -2330,8 +2286,9 @@ public class MainHook {
     }
 
     private boolean isRescheduleRelatedKey(String key) {
-        if (key == null) return false;
-        return KEY_REMINDER_MINUTES.equals(key)
+        // clear() 可能只通知空键；导入备份或恢复默认后也需要重调度。
+        if (key == null) return true;
+        return ReminderConfig.isReminderKey(key)
                 || KEY_MUTE_ENABLED.equals(key)
                 || KEY_MUTE_MINS_BEFORE.equals(key)
                 || KEY_UNMUTE_ENABLED.equals(key)

@@ -5,21 +5,23 @@ import static org.junit.Assert.*;
 import static com.xiaoai.islandnotify.StageDisplayState.Effect.*;
 
 public class StageDisplayStateTest {
-    @Test public void consecutiveTakeoverWaitsForAnActuallyEnabledStage() {
-        long reminder = 10000, start = 20000, end = 80000;
-        boolean[] enabled = {false, true, true};
-        assertFalse(StageDisplayState.canTakeOver(9999, reminder, false, true));
-        int pre = StageDisplayState.stageAt(10000, start, end);
-        assertFalse(StageDisplayState.canTakeOver(10000, reminder, false, enabled[pre]));
-        int active = StageDisplayState.stageAt(20000, start, end);
-        assertTrue(StageDisplayState.canTakeOver(20000, reminder, false, enabled[active]));
-        assertFalse(StageDisplayState.canTakeOver(20000, reminder, true, enabled[active]));
-    }
-
-    @Test public void zeroGapCoursesPreferTheNextActiveStageAtTheExactBoundary() {
+    @Test public void zeroGapCoursesEachEnterTheirOwnStageAtTheExactBoundary() {
         assertEquals(ConfigDefaults.STAGE_POST, StageDisplayState.stageAt(20000, 1000, 20000));
         assertEquals(ConfigDefaults.STAGE_ACTIVE, StageDisplayState.stageAt(20000, 20000, 80000));
-        assertTrue(StageDisplayState.canTakeOver(20000, 20000, false, true));
+    }
+
+    @Test public void zeroMinuteReminderAndActiveBoundaryAlertOnlyOnceInEitherOrder() {
+        long start = 20000, end = 80000;
+        for (boolean reminderFirst : new boolean[]{true, false}) {
+            StageDisplayState state = new StageDisplayState();
+            int reminderStage = StageDisplayState.stageAt(start, start, end);
+            int firstStage = reminderFirst ? reminderStage : ConfigDefaults.STAGE_ACTIVE;
+            int secondStage = reminderFirst ? ConfigDefaults.STAGE_ACTIVE : reminderStage;
+            assertEquals(SHOW_ALERT, state.enter(firstStage, true, 10000, start, false));
+            long revision = state.revision;
+            assertEquals(NONE, state.enter(secondStage, true, 10000, start, false));
+            assertEquals(revision, state.revision);
+        }
     }
 
     @Test public void allEightSwitchCombinationsAlertOnlyOnTheFirstVisibleStage() {
@@ -115,7 +117,7 @@ public class StageDisplayStateTest {
         assertEquals(NONE, restored.expire(1, state.revision, 12000));
     }
 
-    @Test public void dismissalSkippingAndConsecutiveHandoverPermanentlyEndTheLesson() {
+    @Test public void dismissalAndSkippingPermanentlyEndTheLesson() {
         StageDisplayState state = new StageDisplayState();
         state.enter(0, true, 10000, 1000, false);
         state.terminate();

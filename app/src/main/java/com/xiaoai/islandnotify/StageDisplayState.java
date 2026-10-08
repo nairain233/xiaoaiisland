@@ -18,10 +18,6 @@ public final class StageDisplayState {
         return nowMs >= startMs ? ConfigDefaults.STAGE_ACTIVE : ConfigDefaults.STAGE_PRE;
     }
 
-    public static boolean canTakeOver(long nowMs, long reminderMs, boolean terminated, boolean enabled) {
-        return !terminated && enabled && nowMs >= reminderMs;
-    }
-
     public Effect enter(int nextStage, boolean nextEnabled, long nextDurationMs,
                         long nowMs, boolean configurationChange) {
         if (terminated || nextStage < stage || nextStage < 0 || nextStage > 2) return Effect.NONE;

@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -120,7 +121,7 @@ private data class WorkSwapDraft(
     var followWeekday: Int = 1,
 )
 
-private const val MAX_MINUTE_VALUE = 9999
+private const val MAX_MINUTE_VALUE = ReminderConfig.MAX_MINUTES
 private const val RELEASES_URL =
     "https://github.com/nairain233/xiaoaiisland/releases"
 private const val FORK_AUTHOR_URL = "https://github.com/nairain233"
@@ -248,6 +249,7 @@ private class SettingsComposeState {
     var timeoutState by mutableStateOf(TimeoutUiState())
     var courseDataSource by mutableStateOf("xiaoai")
     var reminderMinutes by mutableStateOf("15")
+    val reminderSectionMinutes = mutableStateMapOf<Int, Int>()
     var repostEnabled by mutableStateOf(true)
     var muteEnabled by mutableStateOf(false)
     var muteMinsBefore by mutableStateOf("0")
@@ -363,7 +365,10 @@ private class SettingsComposeState {
         )
         timeoutState = readTimeoutState(prefs)
         courseDataSource = PrefsAccess.readConfigString(prefs, "course_data_source", "xiaoai")
-        reminderMinutes = PrefsAccess.readConfigInt(prefs, "reminder_minutes_before", 15).toString()
+        val reminderConfig = ReminderConfig.read(prefs)
+        reminderMinutes = reminderConfig.defaultMinutes.toString()
+        reminderSectionMinutes.clear()
+        reminderSectionMinutes.putAll(reminderConfig.sectionMinutes)
         repostEnabled = PrefsAccess.readConfigBool(prefs, "repost_enabled", true)
         muteEnabled = PrefsAccess.readConfigBool(prefs, "mute_enabled", false)
         muteMinsBefore = PrefsAccess.readConfigInt(prefs, "mute_mins_before", 0).toString()
@@ -484,7 +489,7 @@ private fun HomeEntryPage(
                 )
                 ArrowPreference(
                     title = "课前提醒",
-                    summary = "配置数据源及提前提醒分钟数与补发策略",
+                    summary = "配置数据源、默认及各节次提醒时间与补发策略",
                     onClick = { onOpen(AppRoute.Reminder) },
                 )
                 ArrowPreference(
@@ -1258,6 +1263,11 @@ private fun ReminderPage(
     pagePadding: PaddingValues = PaddingValues(0.dp),
 ) {
     var showReminderPicker by remember { mutableStateOf(false) }
+    var showSectionPicker by remember { mutableStateOf(false) }
+    var showSectionMinutePicker by remember { mutableStateOf(false) }
+    var editingSection by remember { mutableStateOf<Int?>(null) }
+    var draftSection by remember { mutableIntStateOf(1) }
+    var pendingDeleteSection by remember { mutableStateOf<Int?>(null) }
     val dataSourceEntries = remember {
         listOf(
             "超级小爱",
@@ -1275,7 +1285,7 @@ private fun ReminderPage(
         dismissibleHint(
             hints = hints,
             key = "hint_reminder",
-            text = "自定义设置通知发送时机",
+            text = "按课程起始节次设置提前提醒时间，所有星期共用；未设置的节次使用默认时间，0 分钟表示上课时提醒。连堂课程只按起始节次提醒一次。",
         )
         item(key = "section_0") {
             SettingsSection {
@@ -1310,7 +1320,7 @@ private fun ReminderPage(
                 )
 
                 ArrowPreference(
-                    title = "提前提醒",
+                    title = "默认提前提醒",
                     endActions = { PreferenceValue("${state.reminderMinutes.ifBlank { "15" }} 分钟") },
                     onClick = {
                         showReminderPicker = true
@@ -1318,18 +1328,120 @@ private fun ReminderPage(
                 )
             }
         }
+        item(key = "section_reminder_rules") {
+            SettingsSection(title = "按节次提醒") {
+                if (state.reminderSectionMinutes.isNotEmpty()) {
+                    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                        val rules = state.reminderSectionMinutes.toSortedMap().entries.toList()
+                        rules.forEachIndexed { index, rule ->
+                            CompactEditableEntry(
+                                onEdit = {
+                                    editingSection = rule.key
+                                    draftSection = rule.key
+                                    showSectionPicker = true
+                                },
+                                onDelete = { pendingDeleteSection = rule.key },
+                            ) {
+                                Text(
+                                    "第${rule.key}节",
+                                    style = MiuixTheme.textStyles.main,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    if (rule.value == 0) "上课时提醒" else "提前 ${rule.value} 分钟",
+                                    style = MiuixTheme.textStyles.body2,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            if (index != rules.lastIndex) Spacer(Modifier.height(12.dp))
+                        }
+                    }
+                }
+                ArrowPreference(
+                    title = "新增节次规则",
+                    summary = if (state.reminderSectionMinutes.size == ReminderConfig.MAX_SECTION) {
+                        "所有节次均已设置，可编辑已有规则"
+                    } else {
+                        "选择节次，设置自己的提前提醒时间"
+                    },
+                    enabled = state.reminderSectionMinutes.size < ReminderConfig.MAX_SECTION,
+                    onClick = {
+                        val section = (1..ReminderConfig.MAX_SECTION).firstOrNull {
+                            it !in state.reminderSectionMinutes
+                        }
+                        if (section != null) {
+                            editingSection = null
+                            draftSection = section
+                            showSectionPicker = true
+                        }
+                    },
+                )
+            }
+        }
     }
     if (showReminderPicker) {
         MiuixMinutePickerDialog(
-            title = "提前提醒",
+            title = "默认提前提醒",
             initialValue = state.reminderMinutes.toIntOrNull() ?: 15,
             minValue = 0,
             maxValue = MAX_MINUTE_VALUE,
             onDismiss = { showReminderPicker = false },
             onConfirm = {
                 state.reminderMinutes = it.toString()
-                activity.uiEditConfigPrefs().putInt("reminder_minutes_before", it).apply()
+                activity.uiEditConfigPrefs().putInt(ReminderConfig.DEFAULT_KEY, it).apply()
                 showReminderPicker = false
+            },
+        )
+    }
+    if (showSectionPicker) {
+        MiuixSectionPickerDialog(
+            title = "选择提醒节次",
+            initialSec = draftSection,
+            minSec = 1,
+            maxSec = ReminderConfig.MAX_SECTION,
+            onDismiss = { showSectionPicker = false },
+            onConfirm = { section ->
+                if (section != editingSection && section in state.reminderSectionMinutes) {
+                    Toast.makeText(activity, "第${section}节已有规则，请编辑已有规则", Toast.LENGTH_SHORT).show()
+                } else {
+                    draftSection = section
+                    showSectionPicker = false
+                    showSectionMinutePicker = true
+                }
+            },
+        )
+    }
+    if (showSectionMinutePicker) {
+        MiuixMinutePickerDialog(
+            title = "第${draftSection}节提前提醒",
+            initialValue = editingSection?.let { state.reminderSectionMinutes[it] }
+                ?: state.reminderMinutes.toIntOrNull() ?: ConfigDefaults.REMINDER_MINUTES,
+            minValue = 0,
+            maxValue = MAX_MINUTE_VALUE,
+            onDismiss = { showSectionMinutePicker = false },
+            onConfirm = { minutes ->
+                val editor = activity.uiEditConfigPrefs()
+                editingSection?.takeIf { it != draftSection }?.let { oldSection ->
+                    editor.remove(ReminderConfig.sectionKey(oldSection))
+                    state.reminderSectionMinutes.remove(oldSection)
+                }
+                editor.putInt(ReminderConfig.sectionKey(draftSection), minutes).apply()
+                state.reminderSectionMinutes[draftSection] = minutes
+                showSectionMinutePicker = false
+            },
+        )
+    }
+    pendingDeleteSection?.let { section ->
+        ConfirmationDialog(
+            show = true,
+            title = "删除节次规则",
+            summary = "删除第${section}节的规则后，将使用默认提前提醒时间。",
+            confirmText = "删除",
+            onDismissRequest = { pendingDeleteSection = null },
+            onConfirm = {
+                activity.uiEditConfigPrefs().remove(ReminderConfig.sectionKey(section)).apply()
+                state.reminderSectionMinutes.remove(section)
+                pendingDeleteSection = null
             },
         )
     }
